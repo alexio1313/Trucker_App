@@ -161,4 +161,4 @@ router.get('/analytics', async (req, res) => {
   }
 });
 
-module.exports = { loaderRoutes: router };
+module.exports = router;

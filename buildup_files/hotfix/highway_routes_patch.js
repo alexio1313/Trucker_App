@@ -334,4 +334,4 @@ function serializeAdForDriver(a) {
   };
 }
 
-module.exports = { highwayRoutes: router };
+module.exports = router;

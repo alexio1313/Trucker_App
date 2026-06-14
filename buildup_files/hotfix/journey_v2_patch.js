@@ -325,4 +325,4 @@ router.get('/eta', async (req, res) => {
   }
 });
 
-module.exports = { journeyV2Routes: router };
+module.exports = router;
