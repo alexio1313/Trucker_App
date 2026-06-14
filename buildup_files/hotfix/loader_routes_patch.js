@@ -80,7 +80,7 @@ router.get('/near', async (req, res) => {
     }
     res.json({
       success: true,
-      data: companies.map((c: any) => ({
+      data: companies.map((c) => ({
         id: c.id, companyName: c.company_name, coverageCities: c.coverage_cities,
         avgRating: c.avg_rating, totalJobs: c.total_jobs,
         rateCard: c.rate_card, phone: c.phone_number, subscriptionTier: c.subscription_tier,
@@ -107,7 +107,7 @@ router.get('/jobs', async (req, res) => {
     );
     res.json({
       success: true,
-      data: loads.map((l: any) => ({
+      data: loads.map((l) => ({
         id: l.load_id, loadId: l.load_id, originCity: l.origin_city, originAddress: l.origin_address,
         cargoType: l.cargo_type, weightTonnes: (l.cargo_weight_kg / 1000).toFixed(2),
         loadingArrangement: l.loading_arrangement, scheduledStart: l.scheduled_pickup, merchantName: l.merchant_name,

@@ -210,7 +210,7 @@ router.get('/near', async (req, res) => {
   try {
     const { lat, lng, radius } = req.query;
     if (!lat || !lng) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'lat and lng required' } });
-    const radiusKm = parseFloat(radius as string) || 15;
+    const radiusKm = parseFloat(radius) || 15;
     const businesses = await query(
       `SELECT id, business_name, category, location_lat, location_lng, subscription_tier, avg_rating, is_open_24hr, current_status, facilities, phone,
        ST_Distance(location::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography) / 1000 AS distance_km
@@ -218,7 +218,7 @@ router.get('/near', async (req, res) => {
        WHERE status = 'active' AND is_verified = true
        AND ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography, $3 * 1000)
        ORDER BY CASE subscription_tier WHEN 'premium' THEN 1 WHEN 'standard' THEN 2 WHEN 'basic' THEN 3 ELSE 4 END, distance_km`,
-      [parseFloat(lng as string), parseFloat(lat as string), radiusKm]
+      [parseFloat(lng), parseFloat(lat), radiusKm]
     );
     // Always include emergency services (tyre/mechanic) regardless of tier
     const emergencyExtras = await query(
@@ -227,10 +227,10 @@ router.get('/near', async (req, res) => {
        FROM highway_businesses
        WHERE status='active' AND category IN ('tyre_shop','service_center')
        AND ST_DWithin(location::geography, ST_SetSRID(ST_MakePoint($1,$2),4326)::geography, $3 * 1000)`,
-      [parseFloat(lng as string), parseFloat(lat as string), radiusKm]
+      [parseFloat(lng), parseFloat(lat), radiusKm]
     );
-    const allIds = new Set(businesses.map((b: any) => b.id));
-    const extras = emergencyExtras.filter((b: any) => !allIds.has(b.id));
+    const allIds = new Set(businesses.map((b) => b.id));
+    const extras = emergencyExtras.filter((b) => !allIds.has(b.id));
     res.json({ success: true, data: [...businesses, ...extras].map(serializePublic) });
   } catch (e) {
     res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
@@ -288,7 +288,7 @@ router.post('/ads/:adId/click', async (req, res) => {
   }
 });
 
-function serialize(b: any) {
+function serialize(b) {
   return {
     id: b.id, businessName: b.business_name, category: b.category, phone: b.phone,
     gstNumber: b.gst_number, gstVerified: b.gst_verified, fssaiNumber: b.fssai_number,
@@ -301,7 +301,7 @@ function serialize(b: any) {
   };
 }
 
-function serializePublic(b: any) {
+function serializePublic(b) {
   return {
     id: b.id, businessName: b.business_name, category: b.category,
     locationLat: b.location_lat, locationLng: b.location_lng,
@@ -311,7 +311,7 @@ function serializePublic(b: any) {
   };
 }
 
-function serializeAd(a: any) {
+function serializeAd(a) {
   return {
     id: a.id, businessId: a.business_id, title: a.title, description: a.description,
     offerCode: a.offer_code, offerText: a.offer_text,
@@ -324,7 +324,7 @@ function serializeAd(a: any) {
   };
 }
 
-function serializeAdForDriver(a: any) {
+function serializeAdForDriver(a) {
   return {
     id: a.id, title: a.title, description: a.description,
     offerCode: a.offer_code, offerText: a.offer_text,

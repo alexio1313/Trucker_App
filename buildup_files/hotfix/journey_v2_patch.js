@@ -124,7 +124,7 @@ router.get('/toll-log', async (req, res) => {
     const crossings = await query('SELECT * FROM toll_crossings WHERE load_id=$1 ORDER BY crossing_time DESC', [loadId]);
     res.json({
       success: true,
-      data: crossings.map((c: any) => ({
+      data: crossings.map((c) => ({
         id: c.id, plazaName: c.plaza_name, stateName: c.state_name, highwayCode: c.highway_code,
         crossingTime: c.crossing_time, amountPaid: c.amount_paid, paymentMethod: c.payment_method, source: c.source,
       }))
@@ -161,7 +161,7 @@ router.get('/weight-log', async (req, res) => {
     const stops = await query('SELECT * FROM weighbridge_stops WHERE load_id=$1 ORDER BY stop_time DESC', [loadId]);
     res.json({
       success: true,
-      data: stops.map((s: any) => ({
+      data: stops.map((s) => ({
         id: s.id, locationName: s.location_name, stateName: s.state_name,
         stopTime: s.stop_time, weightRecordedTonnes: s.weight_recorded_tonnes,
         gvwLimitTonnes: s.gvw_limit_tonnes, status: s.status, fineAmount: s.fine_amount,
@@ -202,9 +202,9 @@ router.get('/break-suggestions', async (req, res) => {
     const lastBreakTime = lastBreak?.ended_at ? new Date(lastBreak.ended_at) : (journeyStart?.started_at ? new Date(journeyStart.started_at) : now);
     const drivingSinceHours = (now.getTime() - lastBreakTime.getTime()) / 3600000;
     const currentHourIST = (now.getUTCHours() + 5.5) % 24;
-    const todayMealBreaks = breaks.filter((b: any) => b.break_type === 'meal' && new Date(b.ended_at).toDateString() === now.toDateString()).length;
+    const todayMealBreaks = breaks.filter((b) => b.break_type === 'meal' && new Date(b.ended_at).toDateString() === now.toDateString()).length;
 
-    const suggestions: any[] = [];
+    const suggestions = [];
 
     if (drivingSinceHours >= 4) {
       suggestions.push({ type: 'rest', priority: 1, reason: 'Mandatory rest (Motor Vehicles Act)', complianceRule: 'MOTOR_VEHICLES_ACT_REST', suggestedKm: null });
@@ -221,7 +221,7 @@ router.get('/break-suggestions', async (req, res) => {
     suggestions.sort((a, b) => a.priority - b.priority);
 
     const existingIds = await query('SELECT break_type FROM break_suggestions WHERE journey_log_id=$1 AND accepted=false AND skipped=false', [journeyLogId]);
-    const existingTypes = new Set(existingIds.map((s: any) => s.break_type));
+    const existingTypes = new Set(existingIds.map((s) => s.break_type));
 
     for (const s of suggestions) {
       if (!existingTypes.has(s.type)) {
@@ -293,7 +293,7 @@ router.get('/eta', async (req, res) => {
     const drivingMins = Math.round((remainingKm / avgSpeed) * 60 * trafficMultiplier);
     const trafficDelayMins = Math.round(drivingMins * (trafficMultiplier - 1));
     const pendingSuggestions = await query("SELECT break_type FROM break_suggestions WHERE journey_log_id=$1 AND accepted=false AND skipped=false", [jl.id]);
-    const pendingBreaksMins = pendingSuggestions.reduce((acc: number, s: any) => {
+    const pendingBreaksMins = pendingSuggestions.reduce((acc, s) => {
       if (s.break_type === 'fuel') return acc + 15;
       if (s.break_type === 'meal') return acc + 45;
       if (s.break_type === 'rest') return acc + 30;
