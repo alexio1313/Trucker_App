@@ -4,7 +4,7 @@
 
 import { GeoLocation } from './geo.types';
 
-export type UserType = 'merchant' | 'trucker' | 'admin';
+export type UserType = 'merchant' | 'trucker' | 'admin' | 'logistics' | 'loader_company' | 'highway_business';
 export type KYCStatus = 'pending' | 'verified' | 'rejected';
 
 export interface User {
