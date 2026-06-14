@@ -21,7 +21,7 @@ router.post('/register', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending') RETURNING *`,
       [userId, companyName, gstNumber || null, labourLicenseNumber || null, labourLicenseDocUrl || null, coverageCities || [], maxConcurrentJobs || 5, rateCard ? JSON.stringify(rateCard) : null]
     );
-    await query("UPDATE users SET usertype='loader_company' WHERE id=$1", [userId]);
+    await query("UPDATE users SET user_type='loader_company' WHERE user_id=$1", [userId]);
     res.status(201).json({ success: true, data: company });
   } catch (e) {
     res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
@@ -67,14 +67,14 @@ router.get('/near', async (req, res) => {
     let companies;
     if (lat && lng) {
       companies = await query(
-        `SELECT lc.*, u.phone_number FROM loader_companies lc JOIN users u ON lc.owner_id=u.id
+        `SELECT lc.*, u.phone_number FROM loader_companies lc JOIN users u ON lc.owner_id=u.user_id
          WHERE lc.status='active' AND lc.subscription_tier != 'pending' AND $1 = ANY(lc.coverage_cities)
          ORDER BY lc.avg_rating DESC NULLS LAST LIMIT 20`,
         [city || '']
       );
     } else {
       companies = await query(
-        "SELECT lc.*, u.phone_number FROM loader_companies lc JOIN users u ON lc.owner_id=u.id WHERE lc.status='active' AND $1 = ANY(lc.coverage_cities) ORDER BY lc.avg_rating DESC NULLS LAST LIMIT 20",
+        "SELECT lc.*, u.phone_number FROM loader_companies lc JOIN users u ON lc.owner_id=u.user_id WHERE lc.status='active' AND $1 = ANY(lc.coverage_cities) ORDER BY lc.avg_rating DESC NULLS LAST LIMIT 20",
         [city || '']
       );
     }
@@ -100,7 +100,7 @@ router.get('/jobs', async (req, res) => {
     const status = req.query.status || 'pending';
     const loads = await query(
       `SELECT l.load_id,l.origin_city,l.origin_address,l.cargo_type,l.cargo_weight_kg,l.loading_arrangement,l.scheduled_pickup,u.full_name AS merchant_name
-       FROM loads l JOIN users u ON l.merchant_id=u.id
+       FROM loads l JOIN users u ON l.merchant_id=u.user_id
        WHERE l.status=$1 AND l.origin_city = ANY($2)
        ORDER BY l.created_at DESC LIMIT 50`,
       [status === 'pending' ? 'posted' : status, company.coverage_cities]

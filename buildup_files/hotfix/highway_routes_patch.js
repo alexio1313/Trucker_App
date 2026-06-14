@@ -21,7 +21,7 @@ router.post('/register', async (req, res) => {
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'pending') RETURNING *`,
       [userId, businessName, category, phone || null, gstNumber || null, fssaiNumber || null, locationLat, locationLng, address || null, highwayName || null, JSON.stringify(facilities || {}), photos || [], isOpen24hr || false]
     );
-    await query("UPDATE users SET usertype = 'highway_business' WHERE id = $1", [userId]);
+    await query("UPDATE users SET user_type = 'highway_business' WHERE user_id = $1", [userId]);
     res.status(201).json({ success: true, data: biz });
   } catch (e) {
     res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
