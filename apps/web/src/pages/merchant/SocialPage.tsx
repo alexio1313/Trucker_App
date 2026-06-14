@@ -24,6 +24,7 @@ const STATUS_STYLES: Record<string, { badge: string; label: string }> = {
 export default function SocialPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<'create' | 'posts'>('create');
+  // V2: Social posting is being replaced by Highway Business Ad Platform
   const [selectedPlatforms, setSelectedPlatforms] = useState<Platform[]>(['linkedin']);
   const [content, setContent] = useState('');
   const [useAI, setUseAI] = useState(false);
@@ -95,6 +96,15 @@ export default function SocialPage() {
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Social Media</h2>
         <p className="text-gray-500 mt-1">Create and manage AI-powered posts across your social platforms</p>
+      </div>
+
+      {/* V2 migration notice */}
+      <div className="mb-6 bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+        <span className="text-xl">📢</span>
+        <div>
+          <p className="font-medium text-amber-800">Social posting is being replaced by the Highway Business Ad Platform.</p>
+          <p className="text-sm text-amber-700 mt-1">If you operate a dhaba, fuel station, or truck stop, <a href="/highway/register" className="underline font-medium">register at /highway/register</a> to advertise directly to drivers on the route map.</p>
+        </div>
       </div>
 
       {/* Tabs */}

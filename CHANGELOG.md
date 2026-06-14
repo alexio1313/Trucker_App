@@ -4,6 +4,96 @@ All sessions with Claude Code (claude-sonnet-4-6). Ordered newest-first per sect
 
 ---
 
+## 2026-06-14 — V2 Platform Enhancements (5 Sprints)
+
+### Sprint 1: Progressive KYC Infrastructure
+- **DB:** 14 SQL migrations (`scripts/migrations/000–013`) — additive, `IF NOT EXISTS` safe:
+  - `000_usertype_constraint` — extends CHECK to support 9 userTypes (adds logistics, loader_company, highway_business, developer, tester, qa)
+  - `001_kyc_fields` — adds verification_stage, aadhaar_verified, kyc_provider, aadhaar_name, gst_number, pan_number to users
+  - `002_trucker_kyc` — DL + selfie verification table
+  - `003_truck_documents` — RC, insurance, fitness, permit doc storage
+  - `004_logistics_companies` — subscription tiers: starter/growth/enterprise
+  - `005_loader_companies` — rate_card JSONB, coverage cities
+  - `006_loader_workers` — worker roster with SHA-256 Aadhaar hash only (never plaintext)
+  - `007_highway_businesses` — PostGIS POINT geometry, GIST index, trigger to sync lat/lng
+  - `008_highway_ads` — ad campaigns with impression/click tracking, budget system
+  - `009_loading_jobs` — loading_arrangement + detention_rate_per_hour on loads table
+  - `010_toll_crossings`, `011_weighbridge_stops`, `012_state_crossings`, `013_trip_breaks` — journey event tables
+- **New service:** `services/kyc-service/` on port 3009:
+  - Aadhaar eKYC via Surepass API (OTP flow) — falls back to dev mock when `SUREPASS_API_KEY` absent
+  - DigiLocker OAuth integration
+  - PAN/GST/DL/RC verification endpoints
+  - Selfie face-match stub (stage 3 KYC unlock)
+  - Anti-spam: Aadhaar uniqueness check via SHA256 hash
+- **Web:** `RegisterPage.tsx` — 4-step wizard (role select → phone+password → Aadhaar eKYC → role fields)
+- **Web:** `LoginPage.tsx` — extended redirect switch for all 6 userTypes
+- **Docker:** `kyc_service` container added to `docker-compose.yml` (port 3009), `KYC_SERVICE_URL` env added to api_gateway
+
+### Sprint 2: Loading Arrangement Flow
+- **Backend patch:** `buildup_files/hotfix/journey_v2_patch.js`
+  - `POST /arrived-pickup` — records arrival, starts detention grace period (30 min default)
+  - `POST /loading-complete` — calculates detention minutes × rate, sets trucker_sign_off
+  - `GET /detention-status` — returns grace remaining / detention accrued
+- **Web:** `SocialPage.tsx` — V2 migration notice banner added (existing social workflow preserved)
+
+### Sprint 3: Highway Business Portal
+- **Backend patch:** `buildup_files/hotfix/highway_routes_patch.js` (complete CRUD + subscription + status)
+  - `GET /highway/near` — PostGIS radius query; emergency services (tyre/mechanic) visible to all drivers
+  - `POST /highway/ads/serve` — contextual serving with impression log + credit deduction
+  - `POST /highway/ads/:id/click` — click tracking + credit deduction
+- **Web pages:** `apps/web/src/pages/highway/` — Dashboard, Profile, AdsPage, AnalyticsPage, SubscriptionPage
+- **Mobile:** `apps/mobile/app/(highway)/` — dashboard, ads, analytics screens
+
+### Sprint 4: Geo-Ad System
+- Integrated into `highway_routes_patch.js`:
+  - Break-type targeting (rest/fuel/meal/washroom), GPS radius, time-window, frequency cap
+  - CTR analytics (`GET /highway/analytics`) — impressions, clicks, CTR, spend, estimated visits
+  - Credit balance warnings on dashboard
+- **Web:** `AdsPage.tsx` — ad campaign CRUD with break-type targeting, budget controls
+
+### Sprint 5: Loader Company Portal
+- **Backend patch:** `buildup_files/hotfix/loader_routes_patch.js`:
+  - Worker roster with SHA-256 Aadhaar hashing
+  - Job matching by coverage cities, express-interest flow
+  - Analytics: jobs/month, earnings, avg rating
+- **Web pages:** `apps/web/src/pages/loader/` — Dashboard, WorkersPage, JobsPage, SubscriptionPage
+- **Mobile:** `apps/mobile/app/(loader)/` — dashboard, workers, jobs screens
+
+### Journey Enhancements (V2)
+- Toll crossings: manual entry (plaza, highway, amount, payment method)
+- Weighbridge stops: weight vs GVW limit, auto status (pass/overloaded/fined)
+- State border crossings with GPS coordinates
+- Break suggestions: server-driven (rest after 4h, meal after 6h, night warning)
+- Break timer: start/end with duration tracking
+- Dynamic ETA: remaining km / 45 kmh × traffic multiplier + fatigue buffer
+- **Mobile:** `(trucker)/breaks.tsx`, `toll-log.tsx`, `weighbridge.tsx` — new screens
+- **Mobile:** `tracking.tsx` — enhanced with highway business pins, break suggestion banner, ETA card, FAB links
+
+### Merchant Tracking View
+- **Web:** `ShipmentTrackingPage.tsx` — full journey timeline (loading events, toll crossings, weighbridge, state crossings, breaks) with ETA breakdown panel and red/green delay indicator
+
+### Admin Panel Additions
+- `apps/admin/src/app/admin/kyc-queue/page.tsx` — KYC verification stage queue with approve action
+- `apps/admin/src/app/admin/loader-companies/page.tsx` — pending/active/suspended with verify/reject/suspend
+- `apps/admin/src/app/admin/highway-businesses/page.tsx` — approval queue with category icons + map link
+- `apps/admin/src/app/admin/highway-ads/page.tsx` — ad review queue with approve/reject
+
+### Infrastructure
+- `scripts/docker-up.sh` — Step 5 now runs all 14 V2 migrations via `docker exec truck_postgres psql`
+- `buildup_files/hotfix/patch_gateway_proxy.js` — V2 proxy routes added (kyc, highway, loader-cos)
+- `docker-compose.yml` — `kyc_service` container, `KYC_SERVICE_URL` env
+
+### QA
+- `buildup_files/qa/qa_v2_regression.js` — 55+ tests covering all V2 features
+  - KYC mock flows (OTP, PAN format, GST, status)
+  - Loading arrangement (arrived-pickup, detention status)
+  - Highway portal (near lookup, registration, ads serve)
+  - Journey V2 (toll, weighbridge, state crossing, break start/end, ETA)
+  - Admin V2 queues (KYC queue, loader-cos, highway-biz, highway-ads)
+  - All 10 service health checks including KYC service
+
+---
+
 ## 2026-06-14 — Bug Fixes: White Screen & Cache
 
 ### Root Cause Found & Fixed: React White Screen

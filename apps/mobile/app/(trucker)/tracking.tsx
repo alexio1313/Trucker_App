@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, ScrollView, Platform, Linking } from 'react-native';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import * as Location from 'expo-location';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -7,6 +7,7 @@ import { loadsApi, truckersApi, trackingApi } from '@truck-platform/api-client';
 import { useAuthStore, useTrackingStore } from '@truck-platform/state';
 import { colors, fontSize, spacing, borderRadius, shadow } from '@truck-platform/ui-kit';
 import { formatCurrency } from '@truck-platform/shared';
+import { apiClient } from '../../src/lib/api';
 
 interface LatLng { latitude: number; longitude: number; }
 
@@ -53,6 +54,10 @@ export default function TrackingScreen() {
   const [routeCoords, setRouteCoords] = useState<LatLng[]>([]);
   const [speed, setSpeed] = useState(0);
   const [routeLoading, setRouteLoading] = useState(false);
+  const [nearbyHighwayBiz, setNearbyHighwayBiz] = useState<any[]>([]);
+  const [breakSuggestion, setBreakSuggestion] = useState<{ type: string; reason: string } | null>(null);
+  const [dynamicEta, setDynamicEta] = useState<{ etaHours: number; trafficMultiplier: number } | null>(null);
+  const [journeyLogId, setJourneyLogId] = useState<string | null>(null);
 
   const { data: activeLoadsData } = useQuery({
     queryKey: ['active-load-tracking'],
@@ -91,6 +96,28 @@ export default function TrackingScreen() {
     }
   }, []);
 
+  async function fetchNearbyHighway(pos: LatLng) {
+    try {
+      const d = await apiClient.post('/highway/near', { lat: pos.latitude, lng: pos.longitude, radiusKm: 5 });
+      setNearbyHighwayBiz((d.data || []).slice(0, 5));
+    } catch {}
+  }
+
+  async function fetchBreakSuggestions(loadId: string) {
+    try {
+      const d = await apiClient.get(`/truckers/my/journey/break-suggestions?journeyLogId=${loadId}`);
+      const top = (d.data || [])[0];
+      if (top && top.priority <= 2) setBreakSuggestion({ type: top.type, reason: top.reason });
+    } catch {}
+  }
+
+  async function fetchDynamicEta(loadId: string) {
+    try {
+      const d = await apiClient.get(`/truckers/my/journey/eta?journeyLogId=${loadId}`);
+      if (d.success) setDynamicEta({ etaHours: d.data.etaHours, trafficMultiplier: d.data.trafficMultiplier });
+    } catch {}
+  }
+
   async function startLocationTracking() {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
@@ -121,9 +148,14 @@ export default function TrackingScreen() {
           // Continue silently
         }
 
-        // Reload route when position changes significantly
+        // Reload route and V2 data when position changes
         if (destCoord) {
           loadRoute(pos, destCoord);
+        }
+        fetchNearbyHighway(pos);
+        if (activeLoad.loadId) {
+          fetchBreakSuggestions(activeLoad.loadId);
+          fetchDynamicEta(activeLoad.loadId);
         }
       },
     );
@@ -231,7 +263,32 @@ export default function TrackingScreen() {
               lineDashPattern={undefined}
             />
           )}
+
+          {/* Highway business pins */}
+          {nearbyHighwayBiz.map((biz: any) => biz.lat && biz.lng ? (
+            <Marker
+              key={biz.id}
+              coordinate={{ latitude: biz.lat, longitude: biz.lng }}
+              title={biz.businessName}
+              description={biz.category?.replace(/_/g, ' ')}
+            >
+              <View style={styles.hwBizMarker}>
+                <Text style={styles.hwBizMarkerText}>
+                  {biz.category === 'fuel' ? '⛽' : biz.category === 'dhaba' ? '🍛' : biz.category === 'tyre_shop' ? '🔧' : '🏪'}
+                </Text>
+              </View>
+            </Marker>
+          ) : null)}
         </MapView>
+
+        {/* Break suggestion banner */}
+        {breakSuggestion && (
+          <View style={styles.breakBanner}>
+            <Text style={styles.breakBannerText}>
+              {breakSuggestion.type === 'rest' ? '😴' : breakSuggestion.type === 'meal' ? '🍛' : '⏸️'} {breakSuggestion.reason}
+            </Text>
+          </View>
+        )}
 
         {/* Speed badge overlay */}
         {isTracking && (
@@ -287,6 +344,30 @@ export default function TrackingScreen() {
             <Text style={styles.metricVal}>₹{distKm ? fuelEst.toLocaleString('en-IN') : '—'}</Text>
             <Text style={styles.metricLabel}>Fuel Est.</Text>
           </View>
+        </View>
+
+        {/* V2 Dynamic ETA card */}
+        {dynamicEta && (
+          <View style={[styles.tipCard, { borderLeftColor: dynamicEta.trafficMultiplier > 1.2 ? '#EF4444' : '#059669' }]}>
+            <Text style={styles.tipTitle}>🕐 Live ETA</Text>
+            <Text style={styles.tipText}>
+              {Math.floor(dynamicEta.etaHours)}h {Math.round((dynamicEta.etaHours % 1) * 60)}m remaining
+              {dynamicEta.trafficMultiplier > 1.2 ? ' ⚠️ Traffic delay' : ' ✅ On track'}
+            </Text>
+          </View>
+        )}
+
+        {/* V2 Quick action FABs */}
+        <View style={styles.v2Actions}>
+          <TouchableOpacity style={styles.v2Fab} onPress={() => Linking.openURL(`/trucker/toll-log?loadId=${activeLoad.loadId}`)}>
+            <Text style={styles.v2FabText}>🛣️ Toll</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.v2Fab} onPress={() => Linking.openURL(`/trucker/weighbridge?loadId=${activeLoad.loadId}`)}>
+            <Text style={styles.v2FabText}>⚖️ Weight</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.v2Fab} onPress={() => Linking.openURL(`/trucker/breaks?journeyLogId=${activeLoad.loadId}`)}>
+            <Text style={styles.v2FabText}>☕ Break</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Route tips */}
@@ -438,4 +519,17 @@ const styles = StyleSheet.create({
   emptyIcon: { fontSize: 56, marginBottom: spacing[4] },
   emptyTitle: { fontSize: fontSize.xl, fontWeight: '600', color: colors.textPrimary },
   emptySubtitle: { fontSize: fontSize.base, color: colors.textSecondary, marginTop: spacing[2] },
+
+  // V2 additions
+  hwBizMarker: { backgroundColor: '#FFF7ED', borderRadius: 8, padding: 4, borderWidth: 1, borderColor: '#FED7AA' },
+  hwBizMarkerText: { fontSize: 18 },
+  breakBanner: {
+    position: 'absolute', bottom: 10, left: 10, right: 10,
+    backgroundColor: '#FEF3C7', borderRadius: 12, padding: 12,
+    borderLeftWidth: 4, borderLeftColor: '#F59E0B',
+  },
+  breakBannerText: { fontWeight: '600', color: '#92400E', fontSize: 13 },
+  v2Actions: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  v2Fab: { flex: 1, backgroundColor: '#fff', borderRadius: 10, padding: 12, alignItems: 'center', borderWidth: 1, borderColor: '#E5E7EB' },
+  v2FabText: { fontWeight: '600', color: '#374151', fontSize: 13 },
 });

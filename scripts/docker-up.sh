@@ -80,8 +80,47 @@ docker-compose up -d ollama prometheus grafana
 echo "  Starting application services..."
 docker compose up -d 2>/dev/null || docker-compose up -d
 
-# Step 5: Show status
-echo -e "${YELLOW}[5/5] Checking service status...${NC}"
+# Step 5: Run V2 database migrations
+echo -e "${YELLOW}[5/6] Running V2 database migrations...${NC}"
+
+MIGRATIONS=(
+  "scripts/migrations/000_usertype_constraint.sql"
+  "scripts/migrations/001_kyc_fields.sql"
+  "scripts/migrations/002_trucker_kyc.sql"
+  "scripts/migrations/003_truck_documents.sql"
+  "scripts/migrations/004_logistics_companies.sql"
+  "scripts/migrations/005_loader_companies.sql"
+  "scripts/migrations/006_loader_workers.sql"
+  "scripts/migrations/007_highway_businesses.sql"
+  "scripts/migrations/008_highway_ads.sql"
+  "scripts/migrations/009_loading_jobs.sql"
+  "scripts/migrations/010_toll_crossings.sql"
+  "scripts/migrations/011_weighbridge_stops.sql"
+  "scripts/migrations/012_state_crossings.sql"
+  "scripts/migrations/013_trip_breaks.sql"
+)
+
+# Wait for postgres to be ready
+echo "  Waiting for postgres to be ready..."
+until docker exec truck_postgres pg_isready -U app_user -d truck_platform >/dev/null 2>&1; do
+  sleep 2
+done
+
+for migration in "${MIGRATIONS[@]}"; do
+  if [ -f "$ROOT_DIR/$migration" ]; then
+    echo "  Applying: $migration"
+    docker exec -i truck_postgres psql -U app_user -d truck_platform < "$ROOT_DIR/$migration" >/dev/null 2>&1 && \
+      echo -e "  ${GREEN}✅ $migration${NC}" || \
+      echo -e "  ${YELLOW}⚠️  $migration (already applied or skipped)${NC}"
+  else
+    echo -e "  ${YELLOW}⚠️  $migration not found, skipping${NC}"
+  fi
+done
+
+echo -e "${GREEN}✅ V2 migrations complete${NC}"
+
+# Step 6: Show status
+echo -e "${YELLOW}[6/6] Checking service status...${NC}"
 sleep 5
 
 echo ""
@@ -102,6 +141,7 @@ echo -e "${GREEN}║  🚚 Trucker Svc:  http://localhost:3002/health           
 echo -e "${GREEN}║  💰 Pricing Svc:  http://localhost:3003/health           ║${NC}"
 echo -e "${GREEN}║  📊 Admin Svc:    http://localhost:3004/health           ║${NC}"
 echo -e "${GREEN}║  📣 Social Svc:   http://localhost:3005/health           ║${NC}"
+echo -e "${GREEN}║  🪪 KYC Svc:      http://localhost:3009/health           ║${NC}"
 echo -e "${GREEN}║  📈 Grafana:      http://localhost:3020 (admin/admin)    ║${NC}"
 echo -e "${GREEN}║  🐰 RabbitMQ:     http://localhost:15672 (guest/guest)   ║${NC}"
 echo -e "${GREEN}║  🔍 Prometheus:   http://localhost:9090                  ║${NC}"

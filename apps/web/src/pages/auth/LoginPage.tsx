@@ -14,10 +14,13 @@ export default function LoginPage() {
     await login(normalized, password);
     // Redirect based on user type after login resolves
     const storeUser = useAuthStore.getState().user;
-    if (storeUser?.userType === 'trucker') {
-      navigate('/trucker/dashboard');
-    } else {
-      navigate('/dashboard');
+    switch (storeUser?.userType) {
+      case 'trucker': navigate('/trucker/dashboard'); break;
+      case 'admin': window.location.href = 'http://192.168.8.101:3011/admin'; break;
+      case 'logistics': navigate('/logistics/dashboard'); break;
+      case 'loader_company': navigate('/loader/dashboard'); break;
+      case 'highway_business': navigate('/highway/dashboard'); break;
+      default: navigate('/dashboard');
     }
   }
 
