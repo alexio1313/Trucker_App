@@ -53,13 +53,11 @@ var content = '"use strict";\n' +
 'router.use("/disputes", auth_middleware_1.authMiddleware, makeProxy(env_1.env.LOAD_SERVICE_URL, "/api/v1/disputes"));\n' +
 'router.use("/social", auth_middleware_1.authMiddleware, (0, auth_middleware_1.requireRole)("admin", "merchant"), makeProxy(env_1.env.SOCIAL_SERVICE_URL, "/api/v1/social"));\n' +
 'router.use("/admin", auth_middleware_1.authMiddleware, (0, auth_middleware_1.requireRole)("admin"), makeProxy(env_1.env.ADMIN_SERVICE_URL, "/api/v1/admin"));\n' +
-'// V2 routes\n' +
-'router.post("/kyc/aadhaar/send-otp", auth_middleware_1.authMiddleware, makeProxy(env_1.env.KYC_SERVICE_URL, "/api/v1/kyc/aadhaar/send-otp"));\n' +
-'router.post("/kyc/aadhaar/verify-otp", auth_middleware_1.authMiddleware, makeProxy(env_1.env.KYC_SERVICE_URL, "/api/v1/kyc/aadhaar/verify-otp"));\n' +
-'router.use("/kyc", auth_middleware_1.authMiddleware, makeProxy(env_1.env.KYC_SERVICE_URL, "/api/v1/kyc"));\n' +
+'// V2 routes — KYC uses process.env fallback (not in env schema)\n' +
+'const KYC_URL = process.env.KYC_SERVICE_URL || "http://kyc_service:3000";\n' +
+'router.use("/kyc", auth_middleware_1.authMiddleware, makeProxy(KYC_URL, "/api/v1/kyc"));\n' +
 'router.get("/highway/near", makeProxy(env_1.env.TRUCKER_SERVICE_URL, "/api/v1/highway/near"));\n' +
 'router.post("/highway/ads/serve", auth_middleware_1.authMiddleware, makeProxy(env_1.env.TRUCKER_SERVICE_URL, "/api/v1/highway/ads/serve"));\n' +
-'router.post("/highway/ads/:adId/click", auth_middleware_1.authMiddleware, makeProxy(env_1.env.TRUCKER_SERVICE_URL, "/api/v1/highway/ads"));\n' +
 'router.use("/highway", auth_middleware_1.authMiddleware, makeProxy(env_1.env.TRUCKER_SERVICE_URL, "/api/v1/highway"));\n' +
 'router.get("/loader-cos/near", makeProxy(env_1.env.TRUCKER_SERVICE_URL, "/api/v1/loader-cos/near"));\n' +
 'router.use("/loader-cos", auth_middleware_1.authMiddleware, makeProxy(env_1.env.TRUCKER_SERVICE_URL, "/api/v1/loader-cos"));\n';
