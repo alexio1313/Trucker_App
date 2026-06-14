@@ -516,7 +516,7 @@ services:
     networks:
       - platform_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -560,7 +560,7 @@ services:
     networks:
       - platform_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001"]
+      test: ["CMD", "curl", "-f", "http://localhost:3001/admin"]
       interval: 10s
       timeout: 5s
       retries: 5
