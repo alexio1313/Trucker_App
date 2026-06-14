@@ -44,6 +44,9 @@ function StatusBadge({ value }: { value: string }) {
 }
 
 export default function SimulationContent() {
+  const [simEnabled, setSimEnabled] = useState<boolean | null>(null);
+  const [modeLoading, setModeLoading] = useState(false);
+
   const [seedStatus, setSeedStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
   const [seedMsg, setSeedMsg] = useState('');
   const [seedCredentials, setSeedCredentials] = useState<null | typeof SIM_TRUCKERS>(null);
@@ -61,6 +64,29 @@ export default function SimulationContent() {
   const [statusLoading, setStatusLoading] = useState(false);
   const [endpointReachable, setEndpointReachable] = useState<boolean | null>(null);
 
+  const fetchMode = useCallback(async () => {
+    try {
+      const r = await fetch(`${SIM_BASE}/mode`);
+      const json = await r.json();
+      if (json.success) setSimEnabled(json.data.enabled);
+    } catch { /* ignore */ }
+  }, []);
+
+  const toggleMode = useCallback(async () => {
+    setModeLoading(true);
+    try {
+      const r = await fetch(`${SIM_BASE}/mode`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: !simEnabled }),
+      });
+      const json = await r.json();
+      if (json.success) setSimEnabled(json.data.enabled);
+    } catch { /* ignore */ } finally {
+      setModeLoading(false);
+    }
+  }, [simEnabled]);
+
   const fetchStatus = useCallback(async () => {
     setStatusLoading(true);
     try {
@@ -76,7 +102,7 @@ export default function SimulationContent() {
     }
   }, []);
 
-  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+  useEffect(() => { fetchMode(); fetchStatus(); }, [fetchMode, fetchStatus]);
 
   async function seedTruckers() {
     setSeedStatus('loading');
@@ -146,9 +172,28 @@ export default function SimulationContent() {
 
   return (
     <div className="p-6 max-w-6xl">
-      <div className="mb-6">
-        <h2 className="text-2xl font-bold text-gray-900">🎮 Simulation Control</h2>
-        <p className="text-gray-500 mt-1">Seed test data for real-world demo — truckers, merchants, and loads across Indian cities</p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">🎮 Simulation Control</h2>
+          <p className="text-gray-500 mt-1">Seed test data for real-world demo — truckers, merchants, and loads across Indian cities</p>
+        </div>
+        <div className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl px-5 py-3 shadow-sm">
+          <div>
+            <p className="text-sm font-semibold text-gray-700">Simulation Mode</p>
+            <p className="text-xs text-gray-400">{simEnabled ? 'Sim truckers visible on platform' : 'Sim truckers hidden from search'}</p>
+          </div>
+          <button
+            onClick={toggleMode}
+            disabled={modeLoading || simEnabled === null}
+            className={`relative inline-flex h-7 w-14 items-center rounded-full transition-colors duration-200 focus:outline-none ${simEnabled ? 'bg-green-500' : 'bg-gray-300'} disabled:opacity-50`}
+            aria-label="Toggle simulation mode"
+          >
+            <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${simEnabled ? 'translate-x-8' : 'translate-x-1'}`} />
+          </button>
+          <span className={`text-sm font-bold ${simEnabled ? 'text-green-600' : 'text-gray-400'}`}>
+            {simEnabled === null ? '…' : simEnabled ? 'ON' : 'OFF'}
+          </span>
+        </div>
       </div>
 
       {/* Endpoint status banner */}

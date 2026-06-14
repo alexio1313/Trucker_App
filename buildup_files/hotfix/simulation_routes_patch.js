@@ -70,6 +70,38 @@ const LOADS_BY_CITY = {
   ],
 };
 
+// GET /api/v1/simulation/mode
+router.get('/mode', async (_req, res) => {
+  try {
+    const row = await queryOne(
+      `SELECT is_suspended FROM users WHERE user_id = $1`,
+      [SIM.truckers.bangalore.userId]
+    );
+    const enabled = row ? !row.is_suspended : false;
+    res.json({ success: true, data: { enabled } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'DB_ERROR', message: e.message } });
+  }
+});
+
+// POST /api/v1/simulation/mode  { enabled: boolean }
+router.post('/mode', async (req, res) => {
+  const enabled = Boolean(req.body?.enabled);
+  const simIds = [
+    SIM.truckers.bangalore.userId, SIM.truckers.delhi.userId, SIM.truckers.mumbai.userId,
+    SIM.merchants.bangalore, SIM.merchants.delhi, SIM.merchants.mumbai,
+  ];
+  try {
+    await query(
+      `UPDATE users SET is_suspended = $1, updated_at = NOW() WHERE user_id = ANY($2::uuid[])`,
+      [!enabled, simIds]
+    );
+    res.json({ success: true, data: { enabled, message: enabled ? 'Simulation ON — truckers visible' : 'Simulation OFF — truckers hidden' } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'DB_ERROR', message: e.message } });
+  }
+});
+
 // GET /api/v1/simulation/status
 router.get('/status', async (_req, res) => {
   try {
