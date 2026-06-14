@@ -69,7 +69,8 @@ const INJECTION_MARKER = '// V2_ROUTES_INJECTED';
 const BEFORE = 'app.use((_req, res) => {';
 
 if (appJs.includes(INJECTION_MARKER)) {
-  appJs = appJs.replace(/\/\/ V2_ROUTES_INJECTED\n[\s\S]*?app\.use\('\/api\/v1\/truckers\/my\/journey', journeyV2Router\);\n/, '');
+  // Remove everything from the marker up to (but not including) the 404 handler anchor
+  appJs = appJs.replace(/\/\/ V2_ROUTES_INJECTED[\s\S]*?(?=app\.use\(\(_req, res\) => \{)/, '');
   console.log('Removed previous V2 injection block');
 }
 
