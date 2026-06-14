@@ -1,6 +1,6 @@
 'use strict';
 const { Router } = require('express');
-const { query, queryOne } = require('../db/postgres');
+const { query, queryOne } = require('./db/postgres');
 
 const router = Router();
 function getUserId(req) { return req.headers['x-user-id']; }
