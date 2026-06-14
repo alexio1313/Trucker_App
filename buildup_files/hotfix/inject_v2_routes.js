@@ -14,6 +14,9 @@ console.log('Written: /app/dist/loader.routes.js');
 fs.writeFileSync('/app/dist/journey_v2.routes.js', fs.readFileSync('/tmp/journey_v2_patch.js', 'utf8'));
 console.log('Written: /app/dist/journey_v2.routes.js');
 
+fs.writeFileSync('/app/dist/simulation.routes.js', fs.readFileSync('/tmp/simulation_routes_patch.js', 'utf8'));
+console.log('Written: /app/dist/simulation.routes.js');
+
 // ─── 2. Patch auth.service.js (camelCase + strip password_hash) ──────────────
 const AUTH = '/app/dist/auth/auth.service.js';
 let authSrc = fs.readFileSync(AUTH, 'utf8');
