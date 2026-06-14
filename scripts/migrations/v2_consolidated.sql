@@ -2,6 +2,9 @@
 -- user_id PK (not id), user_type (not usertype), journey_logs table created here
 -- Safe to run multiple times (IF NOT EXISTS / DO NOTHING / ADD COLUMN IF NOT EXISTS)
 
+-- ── 0. Extend user_type column width (was VARCHAR(10), new types need 30) ────
+ALTER TABLE users ALTER COLUMN user_type TYPE VARCHAR(30);
+
 -- ── 1. Extend user_type CHECK constraint ──────────────────────────────────────
 DO $$
 BEGIN

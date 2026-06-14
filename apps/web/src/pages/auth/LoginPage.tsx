@@ -1,38 +1,42 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '@truck-platform/state';
 
 export default function LoginPage() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
-  const { login, isLoading, error, clearError, user } = useAuthStore();
+  const { login, isLoading, error, clearError } = useAuthStore();
   const navigate = useNavigate();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     const normalized = phone.startsWith('+91') ? phone : `+91${phone}`;
     await login(normalized, password);
-    // Redirect based on user type after login resolves
     const storeUser = useAuthStore.getState().user;
     switch (storeUser?.userType) {
-      case 'trucker': navigate('/trucker/dashboard'); break;
-      case 'admin': window.location.href = 'http://192.168.8.101:3011/admin'; break;
-      case 'logistics': navigate('/logistics/dashboard'); break;
-      case 'loader_company': navigate('/loader/dashboard'); break;
+      case 'trucker':          navigate('/trucker/dashboard'); break;
+      case 'merchant':         navigate('/dashboard'); break;
+      case 'admin':            window.location.href = 'http://192.168.8.101:3011/admin'; break;
+      case 'logistics':        navigate('/logistics/dashboard'); break;
+      case 'loader_company':   navigate('/loader/dashboard'); break;
       case 'highway_business': navigate('/highway/dashboard'); break;
-      default: navigate('/dashboard');
+      default:                 navigate('/dashboard');
     }
   }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
+        {/* Header */}
         <div className="text-center mb-8">
           <div className="text-4xl mb-3">🚛</div>
           <h1 className="text-3xl font-bold text-orange-500">TruckPlatform</h1>
-          <p className="text-gray-500 mt-1">Login for Merchants & Truckers</p>
+          <p className="text-gray-500 mt-1 text-sm">
+            One login for all — Merchant · Trucker · Loader · Highway · Admin
+          </p>
         </div>
 
+        {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
@@ -62,21 +66,33 @@ export default function LoginPage() {
             />
           </div>
 
-          {error && <p className="text-red-500 text-sm">{error}</p>}
+          {error && <p className="text-red-500 text-sm bg-red-50 p-3 rounded-lg">{error}</p>}
 
           <button
             type="submit"
             disabled={isLoading}
             className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 transition-colors disabled:opacity-50"
           >
-            {isLoading ? 'Logging in…' : 'Login'}
+            {isLoading ? 'Logging in…' : 'Login →'}
           </button>
         </form>
 
-        <div className="mt-6 p-4 bg-gray-50 rounded-lg text-xs text-gray-500 space-y-1">
-          <p className="font-semibold text-gray-600">Test Credentials:</p>
-          <p>🏪 Merchant: 9880001001 / TruckQA@2024</p>
-          <p>🚛 Trucker: 9770001001 / TruckQA@2024</p>
+        {/* Register link */}
+        <p className="text-center text-sm text-gray-500 mt-5">
+          New here?{' '}
+          <Link to="/register" className="text-orange-500 font-medium hover:underline">
+            Create an account
+          </Link>
+        </p>
+
+        {/* Test credentials box */}
+        <div className="mt-5 p-4 bg-amber-50 border border-amber-200 rounded-lg text-xs text-gray-600 space-y-1">
+          <p className="font-semibold text-amber-700 mb-2">Test Credentials (all use TruckQA@2024)</p>
+          <p>🏪 Merchant:         9880001001</p>
+          <p>🚛 Trucker:          9770001001</p>
+          <p>🔧 Admin:            9990001001</p>
+          <p>📦 Loader Company:   9660001001</p>
+          <p>🛣️ Highway Business: 9550001001</p>
         </div>
       </div>
     </div>
