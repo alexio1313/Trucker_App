@@ -1,0 +1,23 @@
+{
+  "name": "@truck-platform/state",
+  "version": "1.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@truck-platform/shared": "*",
+    "@truck-platform/api-client": "*",
+    "zustand": "^4.5.4",
+    "immer": "^10.1.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

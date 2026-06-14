@@ -1,0 +1,610 @@
+version: '3.9'
+
+services:
+  # ==================== DATABASES ====================
+  postgres:
+    image: postgis/postgis:16-3.5-alpine
+    container_name: truck_postgres
+    environment:
+      POSTGRES_DB: truck_platform
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password}
+      POSTGRES_INITDB_ARGS: "-c max_connections=300"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app_user -d truck_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  mongodb:
+    image: mongo:7.0
+    container_name: truck_mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: app_user
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-dev_password}
+      MONGO_INITDB_DATABASE: truck_platform
+    volumes:
+      - mongodb_data:/data/db
+      - ./init-scripts/mongo-init.js:/docker-entrypoint-initdb.d/init.js
+    ports:
+      - "27017:27017"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.runCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: truck_redis
+    command: redis-server --appendonly yes --maxmemory 2gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==================== MESSAGE QUEUES ====================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: truck_zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_4LW_COMMANDS_WHITELIST: "ruok, srvr, stat"
+    volumes:
+      - zookeeper_data:/var/lib/zookeeper/data
+      - zookeeper_logs:/var/lib/zookeeper/log
+    ports:
+      - "2181:2181"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD-SHELL", "printf srvr | nc -w3 localhost 2181 | grep -q 'Zookeeper version'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: truck_kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 24
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: truck_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS:-guest}
+      RABBITMQ_DEFAULT_VHOST: /
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==================== SEARCH & CACHE ====================
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.10.0
+    container_name: truck_elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - bootstrap.memory_lock=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    ports:
+      - "9200:9200"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -v red"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+
+  # ==================== AI/ML SERVICES ====================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: truck_ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    networks:
+      - platform_network
+    environment:
+      OLLAMA_HOST: "0.0.0.0:11434"
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull mistral:7b-instruct-v0.2 && wait"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 120s
+    restart: unless-stopped
+
+  # ==================== BACKEND SERVICES ====================
+  api_gateway:
+    build:
+      context: .
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: truck_api_gateway
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_SECRET:-dev_secret_change_in_prod_min_32_chars_x}
+      CORS_ORIGIN: "*"
+      LOAD_SERVICE_URL: http://load_service:3001
+      TRUCKER_SERVICE_URL: http://trucker_service:3002
+      PRICING_SERVICE_URL: http://pricing_service:3003
+      ADMIN_SERVICE_URL: http://admin_service:3004
+      SOCIAL_SERVICE_URL: http://social_service:3005
+      ML_SERVICE_URL: http://ml_service:3006
+      NOTIFICATION_SERVICE_URL: http://notification_service:3007
+      PAYMENT_SERVICE_URL: http://payment_service:3008
+    ports:
+      - "3000:3000"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  load_service:
+    build:
+      context: .
+      dockerfile: services/load-service/Dockerfile
+    container_name: truck_load_service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3001
+      DATABASE_URL: postgresql://app_user:${DB_PASSWORD:-dev_password}@postgres:5432/truck_platform
+      MONGODB_URI: mongodb://app_user:${MONGO_PASSWORD:-dev_password}@mongodb:27017/truck_platform?authSource=admin
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      JWT_ACCESS_SECRET: ${JWT_SECRET:-dev_secret_change_in_prod_min_32_chars_x}
+      AWS_REGION: ap-south-1
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-truck-platform-dev}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-dev_aws_key_id_placeholder}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-dev_aws_secret_placeholder_key}
+    ports:
+      - "3001:3001"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  trucker_service:
+    build:
+      context: .
+      dockerfile: services/trucker-service/Dockerfile
+    container_name: truck_trucker_service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3002
+      DATABASE_URL: postgresql://app_user:${DB_PASSWORD:-dev_password}@postgres:5432/truck_platform
+      MONGODB_URI: mongodb://app_user:${MONGO_PASSWORD:-dev_password}@mongodb:27017/truck_platform?authSource=admin
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      JWT_ACCESS_SECRET: ${JWT_SECRET:-dev_secret_change_in_prod_min_32_chars_x}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev_refresh_secret_change_in_prod_32x}
+      AWS_REGION: ap-south-1
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-truck-platform-dev}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-dev_aws_key_id_placeholder}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-dev_aws_secret_placeholder_key}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev_encryption_key_32chars_secure_x}
+    ports:
+      - "3002:3002"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  pricing_service:
+    build:
+      context: .
+      dockerfile: services/pricing-service/Dockerfile
+    container_name: truck_pricing_service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3003
+      DATABASE_URL: postgresql://app_user:${DB_PASSWORD:-dev_password}@postgres:5432/truck_platform
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      OLLAMA_BASE_URL: http://ollama:11434
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+    ports:
+      - "3003:3003"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  admin_service:
+    build:
+      context: .
+      dockerfile: services/admin-service/Dockerfile
+    container_name: truck_admin_service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_started
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3004
+      DATABASE_URL: postgresql://app_user:${DB_PASSWORD:-dev_password}@postgres:5432/truck_platform
+      MONGODB_URI: mongodb://app_user:${MONGO_PASSWORD:-dev_password}@mongodb:27017/truck_platform?authSource=admin
+      REDIS_URL: redis://redis:6379
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+      KAFKA_BROKERS: kafka:9092
+      AWS_REGION: ap-south-1
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-truck-platform-dev}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-dev_aws_key_id_placeholder}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-dev_aws_secret_placeholder_key}
+    ports:
+      - "3004:3004"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  social_service:
+    build:
+      context: .
+      dockerfile: services/social-publishing/Dockerfile
+    container_name: truck_social_service
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3005
+      MONGODB_URI: mongodb://app_user:${MONGO_PASSWORD:-dev_password}@mongodb:27017/truck_platform?authSource=admin
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      OLLAMA_BASE_URL: http://ollama:11434
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      AWS_REGION: ap-south-1
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:-truck-platform-dev}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-dev_aws_key_id_placeholder}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-dev_aws_secret_placeholder_key}
+      FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-}
+      FACEBOOK_APP_SECRET: ${FACEBOOK_APP_SECRET:-}
+      INSTAGRAM_ACCESS_TOKEN: ${INSTAGRAM_ACCESS_TOKEN:-}
+      TWITTER_API_KEY: ${TWITTER_API_KEY:-}
+      TWITTER_API_SECRET: ${TWITTER_API_SECRET:-}
+      LINKEDIN_ACCESS_TOKEN: ${LINKEDIN_ACCESS_TOKEN:-}
+    ports:
+      - "3005:3005"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  ml_service:
+    build:
+      context: .
+      dockerfile: services/ml-service/Dockerfile
+    container_name: truck_ml_service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3006
+      DATABASE_URL: postgresql://app_user:${DB_PASSWORD:-dev_password}@postgres:5432/truck_platform
+      MONGODB_URI: mongodb://app_user:${MONGO_PASSWORD:-dev_password}@mongodb:27017/truck_platform?authSource=admin
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: mistral:7b
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+    ports:
+      - "3006:3006"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  notification_service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    container_name: truck_notification_service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3007
+      DATABASE_URL: postgresql://app_user:${DB_PASSWORD:-dev_password}@postgres:5432/truck_platform
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      RABBITMQ_URL: amqp://guest:${RABBITMQ_PASS:-guest}@rabbitmq:5672
+      FCM_PROJECT_ID: ${FCM_PROJECT_ID:-}
+      FCM_PRIVATE_KEY: ${FCM_PRIVATE_KEY:-}
+      FCM_CLIENT_EMAIL: ${FCM_CLIENT_EMAIL:-}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER:-}
+    ports:
+      - "3007:3007"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3007/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  payment_service:
+    build:
+      context: .
+      dockerfile: services/payment-service/Dockerfile
+    container_name: truck_payment_service
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3008
+      DATABASE_URL: postgresql://app_user:${DB_PASSWORD:-dev_password}@postgres:5432/truck_platform
+      REDIS_URL: redis://redis:6379
+      KAFKA_BROKERS: kafka:9092
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-rzp_test_dev_placeholder}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-dev_razorpay_secret_placeholder_key}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-dev_webhook_secret_32chars_xxxx}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev_encryption_key_32chars_secure_x}
+    ports:
+      - "3008:3008"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3008/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==================== FRONTEND ====================
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: /api/v1
+        VITE_WS_URL: ws://192.168.8.101:3000
+    container_name: truck_web
+    depends_on:
+      api_gateway:
+        condition: service_healthy
+    ports:
+      - "3010:80"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  admin_panel:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://192.168.8.101:3000
+    container_name: truck_admin_panel
+    depends_on:
+      api_gateway:
+        condition: service_healthy
+    ports:
+      - "3011:3001"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ==================== MONITORING ====================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: truck_prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--storage.tsdb.retention.time=15d'
+    ports:
+      - "9090:9090"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: truck_grafana
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+    ports:
+      - "3020:3000"
+    networks:
+      - platform_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+# ==================== VOLUMES ====================
+volumes:
+  postgres_data:
+  mongodb_data:
+  redis_data:
+  rabbitmq_data:
+  kafka_data:
+  zookeeper_data:
+  zookeeper_logs:
+  elasticsearch_data:
+  ollama_data:
+  prometheus_data:
+  grafana_data:
+
+# ==================== NETWORKS ====================
+networks:
+  platform_network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

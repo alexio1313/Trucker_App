@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-native",
+    "strict": true,
+    "paths": {
+      "@truck-platform/shared": ["../../packages/shared/src"],
+      "@truck-platform/api-client": ["../../packages/api-client/src"],
+      "@truck-platform/state": ["../../packages/state/src"],
+      "@truck-platform/ui-kit": ["../../packages/ui-kit/src"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules"]
+}

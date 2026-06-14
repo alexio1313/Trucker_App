@@ -1,0 +1,71 @@
+# Environment secrets — NEVER commit
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+.turbo/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Docker volumes (local dev data)
+.docker/
+
+# IDE
+.idea/
+.vscode/settings.json
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Mobile
+apps/mobile/ios/build/
+apps/mobile/android/build/
+apps/mobile/.expo/
+
+# Certificates / keys
+*.p12
+*.pem
+*.key
+*.cert
+fastlane/api_key.json
+
+# Generated
+*.tsbuildinfo
+
+# Build artefacts & large binaries
+*.apk
+*.aab
+*.ipa
+
+# Claude Code project memory (machine-specific, not for git)
+.claude/
+buildup_files/claude/
+
+# Sensitive files — never commit
+credentials.txt
+buildup_files/docs/credentials.txt
+.env.production
+
+# Large binaries in buildup_files
+buildup_files/mobile/*.apk
+buildup_files/mobile/*.aab
+buildup_files/mobile/*.ipa

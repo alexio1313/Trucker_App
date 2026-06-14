@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "types": ["vite/client"],
+    "paths": {
+      "@truck-platform/shared": ["../../packages/shared/src"],
+      "@truck-platform/api-client": ["../../packages/api-client/src"],
+      "@truck-platform/state": ["../../packages/state/src"],
+      "@truck-platform/ui-kit": ["../../packages/ui-kit/src"],
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*", "vite.config.ts"],
+  "exclude": ["node_modules", "dist"]
+}

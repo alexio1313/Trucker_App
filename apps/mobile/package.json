@@ -1,0 +1,41 @@
+{
+  "name": "@truck-platform/mobile",
+  "version": "1.0.0",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "build:android": "eas build --platform android",
+    "build:ios": "eas build --platform ios",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@truck-platform/shared": "*",
+    "@truck-platform/api-client": "*",
+    "@truck-platform/state": "*",
+    "@truck-platform/ui-kit": "*",
+    "expo": "~51.0.0",
+    "expo-camera": "~15.0.0",
+    "expo-image-picker": "~15.0.4",
+    "expo-location": "~17.0.1",
+    "expo-notifications": "~0.28.3",
+    "expo-router": "~3.5.14",
+    "expo-secure-store": "~13.0.1",
+    "react": "18.2.0",
+    "react-native": "0.74.1",
+    "react-native-maps": "1.14.0",
+    "react-native-reanimated": "~3.10.1",
+    "socket.io-client": "^4.7.5",
+    "@tanstack/react-query": "^5.45.0",
+    "react-native-safe-area-context": "4.10.1",
+    "react-native-screens": "3.31.1",
+    "@react-native-async-storage/async-storage": "1.23.1"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "typescript": "^5.4.0"
+  }
+}

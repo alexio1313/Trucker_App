@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: truck-platform
+  labels:
+    name: truck-platform
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: truck-platform-quota
+  namespace: truck-platform
+spec:
+  hard:
+    requests.cpu: '8'
+    requests.memory: 8Gi
+    limits.cpu: '16'
+    limits.memory: 16Gi
+    pods: '50'

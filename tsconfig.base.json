@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020"],
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noImplicitReturns": false,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "baseUrl": ".",
+    "paths": {
+      "@truck-platform/shared": ["../../packages/shared/src"],
+      "@truck-platform/api-client": ["../../packages/api-client/src"],
+      "@truck-platform/state": ["../../packages/state/src"],
+      "@truck-platform/ui-kit": ["../../packages/ui-kit/src"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "build", "coverage"]
+}

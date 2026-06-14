@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "TruckPlatform",
+    "slug": "truck-platform",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FF6B00"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.truckplatform.app",
+      "buildNumber": "1",
+      "config": {
+        "googleMapsApiKey": "AIzaSyAmyhZ5kEHNs6s5fr1IHrnBSJrdfa8YQTc"
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "We need your location to match you with nearby loads and track deliveries.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Background location is required for live load tracking.",
+        "NSCameraUsageDescription": "Camera is used to capture delivery proof photos and KYC documents.",
+        "NSPhotoLibraryUsageDescription": "Photo library access is needed to upload KYC documents."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FF6B00"
+      },
+      "package": "com.truckplatform.app",
+      "versionCode": 1,
+      "googleServicesFile": "./google-services.json",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyAmyhZ5kEHNs6s5fr1IHrnBSJrdfa8YQTc"
+        }
+      },
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_BACKGROUND_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-location",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#FF6B00"
+        }
+      ]
+    ],
+    "scheme": "truckplatform",
+    "extra": {
+      "apiUrl": "http://192.168.8.101:3000"
+    }
+  }
+}

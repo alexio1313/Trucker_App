@@ -1,0 +1,35 @@
+{
+  "name": "@truck-platform/web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@truck-platform/shared": "*",
+    "@truck-platform/api-client": "*",
+    "@truck-platform/state": "*",
+    "@truck-platform/ui-kit": "*",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.23.0",
+    "@tanstack/react-query": "^5.45.0",
+    "socket.io-client": "^4.7.5",
+    "@vis.gl/react-google-maps": "^1.1.1",
+    "lucide-react": "^0.395.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^5.3.1",
+    "typescript": "^5.4.0",
+    "tailwindcss": "^3.4.4",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.39"
+  }
+}
