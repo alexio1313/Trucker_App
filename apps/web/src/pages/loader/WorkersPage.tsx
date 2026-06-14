@@ -19,7 +19,7 @@ export default function LoaderWorkersPage() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', phone: '', aadhaarNumber: '', skillTags: ['general'] });
 
-  const headers = { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' };
+  const headers = { 'Content-Type': 'application/json', 'x-user-id': user?.userId || '' };
 
   useEffect(() => {
     fetch('/api/v1/loader-cos/workers', { headers }).then(r => r.json()).then(d => { if (d.success) setWorkers(d.data); });

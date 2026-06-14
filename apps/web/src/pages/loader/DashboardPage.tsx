@@ -7,7 +7,7 @@ export default function LoaderDashboardPage() {
   const [stats, setStats] = useState({ jobsThisMonth: 0, totalEarnings: 0, avgRating: 0, workersActive: 0 });
 
   useEffect(() => {
-    fetch('/api/v1/loader-cos/analytics', { headers: { 'x-user-id': user?.id || '' } })
+    fetch('/api/v1/loader-cos/analytics', { headers: { 'x-user-id': user?.userId || '' } })
       .then(r => r.json()).then(d => { if (d.success) setStats(d.data); });
   }, []);
 

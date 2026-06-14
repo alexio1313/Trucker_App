@@ -27,7 +27,7 @@ export default function ShipmentTrackingPage() {
   const [load, setLoad] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  const headers = { 'x-user-id': user?.id || '' };
+  const headers = { 'x-user-id': user?.userId || '' };
 
   useEffect(() => {
     if (!loadId) return;

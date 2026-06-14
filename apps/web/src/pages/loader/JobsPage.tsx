@@ -21,14 +21,14 @@ export default function LoaderJobsPage() {
   const [jobs, setJobs] = useState<Job[]>([]);
 
   useEffect(() => {
-    fetch(`/api/v1/loader-cos/jobs?status=${tab}`, { headers: { 'x-user-id': user?.id || '' } })
+    fetch(`/api/v1/loader-cos/jobs?status=${tab}`, { headers: { 'x-user-id': user?.userId || '' } })
       .then(r => r.json()).then(d => { if (d.success) setJobs(d.data || []); });
   }, [tab]);
 
   async function expressInterest(loadId: string) {
     await fetch(`/api/v1/loader-cos/jobs/${loadId}/express-interest`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
+      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.userId || '' },
     });
     alert('Interest expressed! The merchant/trucker can now see your company.');
   }

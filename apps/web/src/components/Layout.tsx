@@ -17,14 +17,38 @@ const TRUCKER_NAV = [
   { path: '/trucker/profile', label: 'My Profile', icon: '👤' },
 ];
 
+const LOADER_NAV = [
+  { path: '/loader/dashboard', label: 'Dashboard', icon: '💪' },
+  { path: '/loader/jobs', label: 'Jobs', icon: '📋' },
+  { path: '/loader/workers', label: 'Workers', icon: '👷' },
+  { path: '/loader/subscription', label: 'Subscription', icon: '⭐' },
+];
+
+const HIGHWAY_NAV = [
+  { path: '/highway/dashboard', label: 'Dashboard', icon: '⛽' },
+  { path: '/highway/ads', label: 'Ad Campaigns', icon: '📢' },
+  { path: '/highway/analytics', label: 'Analytics', icon: '📈' },
+  { path: '/highway/profile', label: 'My Profile', icon: '✏️' },
+  { path: '/highway/subscription', label: 'Subscription', icon: '⭐' },
+];
+
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
 
-  const isTrucker = user?.userType === 'trucker';
-  const navItems = isTrucker ? TRUCKER_NAV : MERCHANT_NAV;
-  const portalLabel = isTrucker ? 'Trucker Portal' : 'Merchant Portal';
+  const userType = user?.userType;
+  const navItems =
+    userType === 'trucker' ? TRUCKER_NAV :
+    userType === 'loader_company' ? LOADER_NAV :
+    userType === 'highway_business' ? HIGHWAY_NAV :
+    MERCHANT_NAV;
+  const portalLabel =
+    userType === 'trucker' ? 'Trucker Portal' :
+    userType === 'loader_company' ? 'Loader Portal' :
+    userType === 'highway_business' ? 'Highway Portal' :
+    'Merchant Portal';
+  const isTrucker = userType === 'trucker';
 
   async function handleLogout() {
     await logout();

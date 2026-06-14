@@ -82,12 +82,14 @@ const INJECTION = INJECTION_MARKER + `
 const highwayRouter = require('./highway.routes');
 const loaderRouter = require('./loader.routes');
 const journeyV2Router = require('./journey_v2.routes');
+const simulationRouter = require('./simulation.routes');
 app.use('/api/v1/highway', highwayRouter);
 app.use('/api/v1/loader-cos', loaderRouter);
 app.use('/api/v1/truckers/my/journey', journeyV2Router);
+app.use('/api/v1/simulation', simulationRouter);
 `;
 
 appJs = appJs.replace(BEFORE, INJECTION + BEFORE);
 fs.writeFileSync(APP_JS, appJs);
 console.log('Patched: /app/dist/app.js');
-console.log('Routes: /api/v1/highway  /api/v1/loader-cos  /api/v1/truckers/my/journey (V2)');
+console.log('Routes: /api/v1/highway  /api/v1/loader-cos  /api/v1/truckers/my/journey  /api/v1/simulation (V2)');

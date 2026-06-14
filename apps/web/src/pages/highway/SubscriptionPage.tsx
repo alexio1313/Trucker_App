@@ -23,7 +23,7 @@ export default function HighwaySubscriptionPage() {
   async function upgradeTier() {
     await fetch('/api/v1/highway/subscription', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
+      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.userId || '' },
       body: JSON.stringify({ tier: selectedTier }),
     });
     alert(`Subscription updated to ${selectedTier}. Payment integration via Razorpay coming soon.`);
@@ -32,7 +32,7 @@ export default function HighwaySubscriptionPage() {
   async function addCredits() {
     await fetch('/api/v1/highway/credits/add', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
+      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.userId || '' },
       body: JSON.stringify({ amount: creditsAmount }),
     });
     alert(`₹${creditsAmount} credits added. Payment integration via Razorpay coming soon.`);

@@ -32,7 +32,7 @@ export default function HighwayAdsPage() {
     startsAt: '', endsAt: '',
   });
 
-  const headers = { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' };
+  const headers = { 'Content-Type': 'application/json', 'x-user-id': user?.userId || '' };
 
   useEffect(() => {
     fetch('/api/v1/highway/ads', { headers }).then(r => r.json()).then(d => { if (d.success) setAds(d.data); });

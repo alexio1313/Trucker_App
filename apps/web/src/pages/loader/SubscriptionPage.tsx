@@ -14,7 +14,7 @@ export default function LoaderSubscriptionPage() {
   async function subscribe() {
     await fetch('/api/v1/loader-cos/subscription', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
+      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.userId || '' },
       body: JSON.stringify({ tier: selected }),
     });
     alert(`Subscribed to ${selected}. Payment via Razorpay coming soon.`);

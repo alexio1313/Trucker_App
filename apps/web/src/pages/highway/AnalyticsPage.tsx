@@ -19,7 +19,7 @@ export default function HighwayAnalyticsPage() {
 
   useEffect(() => {
     fetch(`/api/v1/highway/analytics?period=${period}`, {
-      headers: { 'x-user-id': user?.id || '' },
+      headers: { 'x-user-id': user?.userId || '' },
     }).then(r => r.json()).then(d => { if (d.success) setData(d.data); });
   }, [period]);
 

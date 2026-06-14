@@ -8,7 +8,7 @@ export default function HighwayProfilePage() {
   const [form, setForm] = useState({ businessName: '', phone: '', address: '', highwayName: '', isOpen24hr: false, facilities: {} as Record<string, boolean> });
 
   useEffect(() => {
-    fetch('/api/v1/highway/me', { headers: { 'x-user-id': user?.id || '' } })
+    fetch('/api/v1/highway/me', { headers: { 'x-user-id': user?.userId || '' } })
       .then(r => r.json()).then(d => { if (d.success) { setProfile(d.data); setForm({ businessName: d.data.businessName, phone: d.data.phone, address: d.data.address, highwayName: d.data.highwayName, isOpen24hr: d.data.isOpen24hr, facilities: d.data.facilities || {} }); } });
   }, []);
 
@@ -16,7 +16,7 @@ export default function HighwayProfilePage() {
     e.preventDefault();
     const resp = await fetch('/api/v1/highway/me', {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
+      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.userId || '' },
       body: JSON.stringify(form),
     });
     const d = await resp.json();

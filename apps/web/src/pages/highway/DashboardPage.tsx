@@ -16,7 +16,7 @@ export default function HighwayDashboardPage() {
 
   useEffect(() => {
     fetch('/api/v1/highway/analytics?period=7d', {
-      headers: { 'x-user-id': user?.id || '' },
+      headers: { 'x-user-id': user?.userId || '' },
     })
       .then(r => r.json())
       .then(d => { if (d.success) setStats(d.data); })
@@ -27,7 +27,7 @@ export default function HighwayDashboardPage() {
     setStatus(s);
     await fetch('/api/v1/highway/me/status', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.id || '' },
+      headers: { 'Content-Type': 'application/json', 'x-user-id': user?.userId || '' },
       body: JSON.stringify({ currentStatus: s }),
     });
   }
