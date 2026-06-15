@@ -175,10 +175,81 @@ export default function JourneyPage() {
   const [detentionInfo, setDetentionInfo] = useState<DetentionInfo | null>(null);
   const [breakElapsedMins, setBreakElapsedMins] = useState(0);
 
+  // ── Simulation Drive state ────────────────────────────────────────────────
+  const [simDriving, setSimDriving] = useState(false);
+  const [simStep, setSimStep] = useState(30);
+  const [simIntervalSec, setSimIntervalSec] = useState(4);
+  const [simLog, setSimLog] = useState<{ msg: string; ok: boolean }[]>([]);
+  const [simRemaining, setSimRemaining] = useState<number | null>(null);
+  const simIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const simTruckMarker = useRef<any>(null);
+
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok });
     setTimeout(() => setToast(null), 3500);
   };
+
+  const doSimStep = useCallback(async (step: number) => {
+    if (!userId) return;
+    try {
+      const res = await fetch(`${TRUCKER_API}/advance-drive/${userId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stepKm: step }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.success) throw new Error(json.error?.message || 'Failed');
+      const d = json.data;
+      const remaining = parseFloat(d.remainingKm);
+      setSimRemaining(remaining);
+      setSimLog(prev => [
+        { msg: `📍 +${step} km → (${d.newLat.toFixed(3)}, ${d.newLng.toFixed(3)}) · ${remaining} km left`, ok: true },
+        ...prev.slice(0, 7),
+      ]);
+
+      // Update truck marker on Leaflet map
+      const L = (window as any).L;
+      const map = mapInstance.current;
+      if (L && map) {
+        const truckIcon = L.divIcon({
+          className: '',
+          html: `<div style="font-size:28px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.4))">🚛</div>`,
+          iconSize: [32, 32], iconAnchor: [16, 16],
+        });
+        if (simTruckMarker.current) {
+          simTruckMarker.current.setLatLng([d.newLat, d.newLng]);
+        } else {
+          simTruckMarker.current = L.marker([d.newLat, d.newLng], { icon: truckIcon })
+            .bindTooltip('Your truck', { permanent: false })
+            .addTo(map);
+        }
+      }
+
+      if (d.arrived) {
+        setSimLog(prev => [{ msg: '✅ Arrived at destination!', ok: true }, ...prev]);
+        stopSimDrive();
+        fetchData();
+      }
+    } catch (e: any) {
+      setSimLog(prev => [{ msg: `❌ ${e.message}`, ok: false }, ...prev.slice(0, 7)]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  const startSimDrive = useCallback((step: number, intervalSec: number) => {
+    setSimLog([]);
+    setSimDriving(true);
+    doSimStep(step);
+    simIntervalRef.current = setInterval(() => doSimStep(step), intervalSec * 1000);
+  }, [doSimStep]);
+
+  const stopSimDrive = useCallback(() => {
+    if (simIntervalRef.current) { clearInterval(simIntervalRef.current); simIntervalRef.current = null; }
+    setSimDriving(false);
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => () => { if (simIntervalRef.current) clearInterval(simIntervalRef.current); }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -783,6 +854,68 @@ export default function JourneyPage() {
             </div>
             {etaBreakdown.delayVsOriginal != null && etaBreakdown.delayVsOriginal > 0 && (
               <p className="text-xs text-orange-600 mt-2">⚠️ {Math.round(etaBreakdown.delayVsOriginal / 60)} hr behind schedule</p>
+            )}
+          </div>
+        )}
+
+        {/* ── Simulation Drive Panel (only when in_transit or loading) ── */}
+        {(isInTransit || isLoading) && (
+          <div className={`rounded-2xl border-2 p-4 ${simDriving ? 'bg-green-50 border-green-300' : 'bg-gray-50 border-dashed border-gray-200'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🎮</span>
+                <div>
+                  <p className="text-sm font-bold text-gray-800">Simulate Drive</p>
+                  <p className="text-xs text-gray-500">Move your GPS toward destination for demo</p>
+                </div>
+              </div>
+              {simRemaining != null && (
+                <span className="text-xs font-bold text-orange-600 bg-orange-100 px-2 py-1 rounded-full">
+                  {simRemaining} km left
+                </span>
+              )}
+            </div>
+
+            {!simDriving ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Step per tick</label>
+                    <select value={simStep} onChange={e => setSimStep(Number(e.target.value))}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm">
+                      {[10, 20, 30, 50, 100].map(v => <option key={v} value={v}>{v} km</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Interval</label>
+                    <select value={simIntervalSec} onChange={e => setSimIntervalSec(Number(e.target.value))}
+                      className="w-full border border-gray-200 rounded-lg px-2 py-1.5 text-sm">
+                      {[2, 3, 4, 5, 10].map(v => <option key={v} value={v}>{v}s</option>)}
+                    </select>
+                  </div>
+                </div>
+                <button
+                  onClick={() => startSimDrive(simStep, simIntervalSec)}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-xl text-sm transition-colors"
+                >
+                  ▶ Start Simulation Drive
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={stopSimDrive}
+                className="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-2.5 rounded-xl text-sm transition-colors mb-3"
+              >
+                ⏹ Stop Simulation
+              </button>
+            )}
+
+            {simLog.length > 0 && (
+              <div className="mt-2 bg-gray-900 rounded-xl p-3 font-mono text-xs space-y-0.5 max-h-28 overflow-y-auto">
+                {simLog.map((l, i) => (
+                  <p key={i} className={l.ok ? 'text-green-400' : 'text-red-400'}>{l.msg}</p>
+                ))}
+              </div>
             )}
           </div>
         )}
