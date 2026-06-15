@@ -381,27 +381,31 @@ router.post('/seed-q1-data', async (_req, res) => {
       const row = await queryOne(
         `INSERT INTO users (user_id, user_type, full_name, phone_number, password_hash, kyc_status, kyc_reviewed_at)
          VALUES ($1,$2,$3,$4,$5,'verified',NOW())
-         ON CONFLICT (phone_number) DO UPDATE SET user_type=EXCLUDED.user_type, updated_at=NOW()
+         ON CONFLICT (user_id) DO UPDATE SET
+           user_type=EXCLUDED.user_type, full_name=EXCLUDED.full_name,
+           phone_number=EXCLUDED.phone_number, password_hash=EXCLUDED.password_hash,
+           updated_at=NOW()
          RETURNING user_id`,
         [preferredId, userType, fullName, phone, hash]
       );
       return row.user_id;
     }
-    const blrFuelId  = await upsertHBUser(HB_USERS.blr_fuel, 'highway_business','NH-4 Fuel BLR',         '+919880001001', SIM_HASH);
-    const blrRestId  = await upsertHBUser(HB_USERS.blr_rest, 'highway_business','Dhaba BLR NH-4',         '+919880001002', SIM_HASH);
-    const delFuelId  = await upsertHBUser(HB_USERS.del_fuel, 'highway_business','NH-1 Fuel Delhi',         '+919880001003', SIM_HASH);
-    const mumFuelId  = await upsertHBUser(HB_USERS.mum_fuel, 'highway_business','Western Express Fuel MUM','+919880001004', SIM_HASH);
-    const mumRestId  = await upsertHBUser(HB_USERS.mum_rest, 'highway_business','Highway Dhaba Mumbai',    '+919880001005', SIM_HASH);
-    const blrMechId  = await upsertHBUser(HB_USERS.blr_mech, 'highway_business','Tumkur Truck Service',    '+919880001006', SIM_HASH);
+    // NOTE: Highway business phones use 9850 prefix to avoid conflict with merchants (9880) and truckers (9860)
+    const blrFuelId  = await upsertHBUser(HB_USERS.blr_fuel, 'highway_business','NH-4 Fuel BLR',         '+919850001001', SIM_HASH);
+    const blrRestId  = await upsertHBUser(HB_USERS.blr_rest, 'highway_business','Dhaba BLR NH-4',         '+919850001002', SIM_HASH);
+    const delFuelId  = await upsertHBUser(HB_USERS.del_fuel, 'highway_business','NH-1 Fuel Delhi',         '+919850001003', SIM_HASH);
+    const mumFuelId  = await upsertHBUser(HB_USERS.mum_fuel, 'highway_business','Western Express Fuel MUM','+919850001004', SIM_HASH);
+    const mumRestId  = await upsertHBUser(HB_USERS.mum_rest, 'highway_business','Highway Dhaba Mumbai',    '+919850001005', SIM_HASH);
+    const blrMechId  = await upsertHBUser(HB_USERS.blr_mech, 'highway_business','Tumkur Truck Service',    '+919850001006', SIM_HASH);
 
     // 5. Highway businesses — correct category values: 'fuel','dhaba','service_center','tyre_shop','truck_stop'
     const bizData = [
-      [blrFuelId, 'NH-4 Fuel Station BLR', 'fuel',           12.9553, 77.5616, 'Tumkur Road, Bangalore',       'NH-4 Bangalore','premium',4.5,500, '+919880001001'],
-      [blrRestId, 'Highway Dhaba BLR',      'dhaba',          13.1200, 77.5946, 'NH-7 near Dobbaspet, BLR',    'NH-7 Bangalore','basic',  4.2,200, '+919880001002'],
-      [delFuelId, 'NH-1 Fuel Delhi',        'fuel',           28.7041, 77.1025, 'GT Karnal Road, Delhi',        'NH-1 Delhi',    'premium',4.6,600, '+919880001003'],
-      [mumFuelId, 'Western Express Fuel',   'fuel',           19.1136, 72.8697, 'Western Express Highway, MUM', 'WEH Mumbai',    'basic',  4.3,300, '+919880001004'],
-      [mumRestId, 'Highway Dhaba Mumbai',   'dhaba',          19.2183, 72.9781, 'NH-3 Thane bypass',           'NH-3 Thane',    'basic',  4.1,150, '+919880001005'],
-      [blrMechId, 'Tumkur Truck Service',   'service_center', 13.3400, 77.1010, 'NH-4 Tumkur',                 'NH-4 Tumkur',   'basic',  4.4,100, '+919880001006'],
+      [blrFuelId, 'NH-4 Fuel Station BLR', 'fuel',           12.9553, 77.5616, 'Tumkur Road, Bangalore',       'NH-4 Bangalore','premium',4.5,500, '+919850001001'],
+      [blrRestId, 'Highway Dhaba BLR',      'dhaba',          13.1200, 77.5946, 'NH-7 near Dobbaspet, BLR',    'NH-7 Bangalore','basic',  4.2,200, '+919850001002'],
+      [delFuelId, 'NH-1 Fuel Delhi',        'fuel',           28.7041, 77.1025, 'GT Karnal Road, Delhi',        'NH-1 Delhi',    'premium',4.6,600, '+919850001003'],
+      [mumFuelId, 'Western Express Fuel',   'fuel',           19.1136, 72.8697, 'Western Express Highway, MUM', 'WEH Mumbai',    'basic',  4.3,300, '+919850001004'],
+      [mumRestId, 'Highway Dhaba Mumbai',   'dhaba',          19.2183, 72.9781, 'NH-3 Thane bypass',           'NH-3 Thane',    'basic',  4.1,150, '+919850001005'],
+      [blrMechId, 'Tumkur Truck Service',   'service_center', 13.3400, 77.1010, 'NH-4 Tumkur',                 'NH-4 Tumkur',   'basic',  4.4,100, '+919850001006'],
     ];
     const bizIds = {};
     for (const [uid, name, cat, lat, lng, addr, hwName, tier, rating, credits, phone] of bizData) {

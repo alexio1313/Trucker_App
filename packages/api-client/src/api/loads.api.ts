@@ -46,8 +46,8 @@ export const loadsApi = {
     return apiClient.get(ENDPOINTS.LOADS.NEARBY, { params }).then((r) => r.data);
   },
 
-  acceptLoad(loadId: string): Promise<ApiResponse<Load>> {
-    return apiClient.post(ENDPOINTS.LOADS.ACCEPT(loadId)).then((r) => r.data);
+  acceptLoad(loadId: string, truckId: string): Promise<ApiResponse<Load>> {
+    return apiClient.post(ENDPOINTS.LOADS.ACCEPT(loadId), { truckId }).then((r) => r.data);
   },
 
   confirmPickup(loadId: string, photoUrl?: string): Promise<ApiResponse<Load>> {

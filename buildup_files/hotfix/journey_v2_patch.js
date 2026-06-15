@@ -90,11 +90,17 @@ router.post('/begin-loading', async (req, res) => {
     if (!loadId) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'loadId required' } });
     // Mark load as loading
     await query("UPDATE loads SET status='loading', updated_at=NOW() WHERE load_id=$1 AND trucker_id=$2", [loadId, userId]);
-    // Create journey_log record if not exists
-    await query(
-      "INSERT INTO journey_logs (load_id, trucker_id, status) VALUES ($1,$2,'active') ON CONFLICT DO NOTHING",
+    // Create journey_log record only if one doesn't already exist for this load+trucker
+    const existingLog = await queryOne(
+      "SELECT id FROM journey_logs WHERE load_id=$1 AND trucker_id=$2 AND status NOT IN ('completed','abandoned') LIMIT 1",
       [loadId, userId]
     );
+    if (!existingLog) {
+      await query(
+        "INSERT INTO journey_logs (load_id, trucker_id, status) VALUES ($1,$2,'active')",
+        [loadId, userId]
+      );
+    }
     // Record arrival in loading_jobs (like arrived-pickup)
     const load = await queryOne('SELECT loading_arrangement, detention_rate_per_hour FROM loads WHERE load_id=$1', [loadId]);
     if (load) {
@@ -121,12 +127,15 @@ router.post('/start', async (req, res) => {
     if (!loadId) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'loadId required' } });
     // Mark load as in_transit
     await query("UPDATE loads SET status='in_transit', updated_at=NOW() WHERE load_id=$1 AND trucker_id=$2", [loadId, userId]);
-    // Update or create journey_log
-    const existing = await queryOne('SELECT id FROM journey_logs WHERE load_id=$1 AND trucker_id=$2', [loadId, userId]);
+    // Update or create journey_log (only touch non-completed logs)
+    const existing = await queryOne(
+      "SELECT id FROM journey_logs WHERE load_id=$1 AND trucker_id=$2 AND status NOT IN ('completed','abandoned') ORDER BY created_at DESC LIMIT 1",
+      [loadId, userId]
+    );
     if (existing) {
       await query(
-        'UPDATE journey_logs SET started_at=NOW(), status=$1 WHERE id=$2',
-        ['active', existing.id]
+        "UPDATE journey_logs SET started_at=NOW(), status='active' WHERE id=$1",
+        [existing.id]
       );
     } else {
       await query(

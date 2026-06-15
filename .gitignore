@@ -69,3 +69,10 @@ buildup_files/docs/credentials.txt
 buildup_files/mobile/*.apk
 buildup_files/mobile/*.aab
 buildup_files/mobile/*.ipa
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/

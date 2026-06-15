@@ -7,7 +7,10 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "type-check": "tsc --noEmit",
-    "lint": "eslint src --ext .ts,.tsx"
+    "lint": "eslint src --ext .ts,.tsx",
+    "translate": "node ../../scripts/translate.js",
+    "translate:force": "node ../../scripts/translate.js --force",
+    "translate:hi": "node ../../scripts/translate.js --lang hi"
   },
   "dependencies": {
     "@truck-platform/shared": "*",

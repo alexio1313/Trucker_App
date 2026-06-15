@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { loadsApi } from '@truck-platform/api-client';
+import { loadsApi, truckersApi } from '@truck-platform/api-client';
 import { formatCurrency, formatDistance } from '@truck-platform/shared';
 
 const LOAD_API = 'http://192.168.8.101:3001/api/v1/loads';
@@ -31,7 +31,7 @@ function LoadCard({
   extra,
 }: {
   load: EnhancedLoad;
-  onAccept: (id: string) => void;
+  onAccept: (load: EnhancedLoad) => void;
   accepting: boolean;
   extra?: React.ReactNode;
 }) {
@@ -99,11 +99,7 @@ function LoadCard({
           </p>
         </div>
         <button
-          onClick={() => {
-            if (window.confirm(`Accept load from ${load.origin_city} to ${load.dest_city}?`)) {
-              onAccept(load.load_id);
-            }
-          }}
+          onClick={() => onAccept(load)}
           disabled={accepting}
           className="bg-orange-500 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:bg-orange-600 transition-colors disabled:opacity-50"
         >
@@ -127,6 +123,10 @@ export default function TruckerLoadsPage() {
   const [enhancedError, setEnhancedError] = useState<string | null>(null);
   const [disputeModal, setDisputeModal] = useState<{ load: any; description: string; disputeType: string } | null>(null);
   const [disputeSubmitting, setDisputeSubmitting] = useState(false);
+  const [truckModal, setTruckModal] = useState<{ load: EnhancedLoad; trucks: any[] } | null>(null);
+  const [selectedTruckId, setSelectedTruckId] = useState<string>('');
+  const [trucksFetching, setTrucksFetching] = useState(false);
+  const [truckError, setTruckError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const { data, isLoading, refetch } = useQuery({
@@ -141,12 +141,38 @@ export default function TruckerLoadsPage() {
   });
 
   const acceptMutation = useMutation({
-    mutationFn: (loadId: string) => loadsApi.acceptLoad(loadId),
+    mutationFn: ({ loadId, truckId }: { loadId: string; truckId: string }) =>
+      loadsApi.acceptLoad(loadId, truckId),
     onSuccess: () => {
+      setTruckModal(null);
       queryClient.invalidateQueries({ queryKey: ['trucker-loads-search-web'] });
       queryClient.invalidateQueries({ queryKey: ['trucker-active-load-web'] });
     },
   });
+
+  async function handleAcceptClick(load: EnhancedLoad) {
+    setTruckError(null);
+    setTrucksFetching(true);
+    try {
+      const res = await truckersApi.getTrucks();
+      const trucks: any[] = res.data ?? [];
+      if (trucks.length === 0) {
+        setTruckError('no_trucks');
+        setTruckModal({ load, trucks: [] });
+      } else if (trucks.length === 1) {
+        setSelectedTruckId(trucks[0].truckId ?? trucks[0].truck_id);
+        setTruckModal({ load, trucks });
+      } else {
+        setSelectedTruckId(trucks[0].truckId ?? trucks[0].truck_id);
+        setTruckModal({ load, trucks });
+      }
+    } catch {
+      setTruckError('fetch_failed');
+      setTruckModal({ load, trucks: [] });
+    } finally {
+      setTrucksFetching(false);
+    }
+  }
 
   const loads = (data?.data?.items ?? []) as any[];
 
@@ -331,7 +357,7 @@ export default function TruckerLoadsPage() {
                 <LoadCard
                   key={load.loadId}
                   load={mapToCard(load)}
-                  onAccept={(id) => acceptMutation.mutate(id)}
+                  onAccept={handleAcceptClick}
                   accepting={acceptMutation.isPending}
                 />
               ))}
@@ -379,7 +405,7 @@ export default function TruckerLoadsPage() {
                 <LoadCard
                   key={load.load_id}
                   load={load}
-                  onAccept={(id) => acceptMutation.mutate(id)}
+                  onAccept={handleAcceptClick}
                   accepting={acceptMutation.isPending}
                   extra={
                     load.score !== undefined ? (
@@ -444,7 +470,7 @@ export default function TruckerLoadsPage() {
                 <LoadCard
                   key={load.load_id}
                   load={load}
-                  onAccept={(id) => acceptMutation.mutate(id)}
+                  onAccept={handleAcceptClick}
                   accepting={acceptMutation.isPending}
                 />
               ))}
@@ -532,6 +558,110 @@ export default function TruckerLoadsPage() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Truck Selection Modal */}
+      {truckModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg text-gray-900">Accept Load</h3>
+              <button onClick={() => setTruckModal(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+            <p className="text-sm text-gray-500 mb-5 pb-4 border-b border-gray-100">
+              {truckModal.load.origin_city} → {truckModal.load.dest_city}
+              <span className="ml-2 font-semibold text-orange-500">₹{truckModal.load.price?.toLocaleString('en-IN')}</span>
+            </p>
+
+            {trucksFetching && (
+              <div className="text-center py-6 text-gray-400">
+                <div className="text-2xl mb-2">🔄</div>
+                <p className="text-sm">Loading your trucks…</p>
+              </div>
+            )}
+
+            {!trucksFetching && (truckError === 'no_trucks' || truckModal.trucks.length === 0) && (
+              <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 text-center">
+                <div className="text-3xl mb-2">🚛</div>
+                <p className="font-semibold text-orange-900 text-sm">No truck registered</p>
+                <p className="text-orange-700 text-xs mt-1">Go to Profile → My Trucks to add your truck before accepting loads.</p>
+              </div>
+            )}
+
+            {!trucksFetching && truckError === 'fetch_failed' && (
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+                Could not load your trucks. Please try again.
+              </div>
+            )}
+
+            {!trucksFetching && !truckError && truckModal.trucks.length > 0 && (
+              <>
+                <p className="text-sm text-gray-600 mb-3 font-medium">
+                  {truckModal.trucks.length === 1 ? 'Your truck will be used for this delivery:' : 'Select which truck to use for this delivery:'}
+                </p>
+                <div className="space-y-2 mb-5">
+                  {truckModal.trucks.map((t: any) => {
+                    const tid = t.truckId ?? t.truck_id;
+                    const reg = t.registrationNo ?? t.registration_no ?? tid;
+                    const label = [t.make, t.model].filter(Boolean).join(' ') || (t.truckType ?? 'Truck');
+                    const cap = t.capacityKg ?? t.capacity_kg;
+                    return (
+                      <button
+                        key={tid}
+                        onClick={() => setSelectedTruckId(tid)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border-2 transition-all ${
+                          selectedTruckId === tid
+                            ? 'border-orange-500 bg-orange-50'
+                            : 'border-gray-200 bg-white hover:border-gray-300'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-semibold text-gray-900 text-sm">{reg}</p>
+                            <p className="text-xs text-gray-500">{label}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {cap && <span className="text-xs text-gray-400">{(cap / 1000).toFixed(0)}t</span>}
+                            {selectedTruckId === tid && <span className="text-orange-500 text-lg">✓</span>}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {acceptMutation.isError && (
+                  <p className="text-xs text-red-500 mb-3">Failed to accept load. Please try again.</p>
+                )}
+
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setTruckModal(null)}
+                    className="flex-1 py-2.5 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => acceptMutation.mutate({ loadId: truckModal.load.load_id, truckId: selectedTruckId })}
+                    disabled={!selectedTruckId || acceptMutation.isPending}
+                    className="flex-1 py-2.5 text-sm bg-orange-500 text-white rounded-xl font-semibold hover:bg-orange-600 disabled:opacity-50 transition-colors"
+                  >
+                    {acceptMutation.isPending ? 'Accepting…' : 'Confirm Accept'}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {!trucksFetching && (truckError === 'no_trucks' || truckModal.trucks.length === 0) && (
+              <button
+                onClick={() => setTruckModal(null)}
+                className="w-full mt-4 py-2.5 text-sm border border-gray-200 rounded-xl hover:bg-gray-50 font-medium"
+              >
+                Close
+              </button>
+            )}
+          </div>
         </div>
       )}
 

@@ -18,14 +18,16 @@
     "clean": "turbo clean && find . -name 'node_modules' -type d -prune -exec rm -rf '{}' +"
   },
   "devDependencies": {
-    "turbo": "^1.13.0",
-    "typescript": "^5.4.0",
-    "prettier": "^3.2.0",
-    "eslint": "^8.57.0",
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.9.3",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.57.0",
     "eslint-config-prettier": "^9.1.0",
-    "eslint-plugin-import": "^2.29.0"
+    "eslint-plugin-import": "^2.29.0",
+    "prettier": "^3.2.0",
+    "turbo": "^1.13.0",
+    "typescript": "^5.4.0"
   },
   "engines": {
     "node": ">=18.0.0",

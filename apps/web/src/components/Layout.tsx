@@ -1,54 +1,54 @@
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@truck-platform/state';
+import { useI18n } from '../i18n/useI18n';
 import { LanguageSelector } from './LanguageSelector';
-
-const MERCHANT_NAV = [
-  { path: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { path: '/loads', label: 'My Loads', icon: '📦' },
-  { path: '/post-load', label: 'Post Load', icon: '➕' },
-  { path: '/social', label: 'Social Media', icon: '📣' },
-];
-
-const TRUCKER_NAV = [
-  { path: '/trucker/dashboard', label: 'Dashboard', icon: '🏠' },
-  { path: '/trucker/loads', label: 'Find Loads', icon: '🔍' },
-  { path: '/trucker/journey', label: 'My Journey', icon: '🚛' },
-  { path: '/trucker/earnings', label: 'Earnings', icon: '💰' },
-  { path: '/trucker/profile', label: 'My Profile', icon: '👤' },
-];
-
-const LOADER_NAV = [
-  { path: '/loader/dashboard', label: 'Dashboard', icon: '💪' },
-  { path: '/loader/jobs', label: 'Jobs', icon: '📋' },
-  { path: '/loader/workers', label: 'Workers', icon: '👷' },
-  { path: '/loader/subscription', label: 'Subscription', icon: '⭐' },
-];
-
-const HIGHWAY_NAV = [
-  { path: '/highway/dashboard', label: 'Dashboard', icon: '⛽' },
-  { path: '/highway/ads', label: 'Ad Campaigns', icon: '📢' },
-  { path: '/highway/analytics', label: 'Analytics', icon: '📈' },
-  { path: '/highway/profile', label: 'My Profile', icon: '✏️' },
-  { path: '/highway/subscription', label: 'Subscription', icon: '⭐' },
-];
 
 export default function Layout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
+  const { t } = useI18n();
 
   const userType = user?.userType;
+
+  const MERCHANT_NAV = [
+    { path: '/dashboard',  label: t('dashboard'),   icon: '📊' },
+    { path: '/loads',      label: t('myLoads'),      icon: '📦' },
+    { path: '/post-load',  label: t('postLoad'),     icon: '➕' },
+    { path: '/social',     label: t('socialMedia'),  icon: '📣' },
+  ];
+  const TRUCKER_NAV = [
+    { path: '/trucker/dashboard', label: t('dashboard'), icon: '🏠' },
+    { path: '/trucker/loads',     label: t('findLoads'), icon: '🔍' },
+    { path: '/trucker/journey',   label: t('myJourney'), icon: '🚛' },
+    { path: '/trucker/earnings',  label: t('earnings'),  icon: '💰' },
+    { path: '/trucker/profile',   label: t('myProfile'), icon: '👤' },
+  ];
+  const LOADER_NAV = [
+    { path: '/loader/dashboard',    label: t('dashboard'),   icon: '💪' },
+    { path: '/loader/jobs',         label: t('jobs'),        icon: '📋' },
+    { path: '/loader/workers',      label: t('workers'),     icon: '👷' },
+    { path: '/loader/subscription', label: t('subscription'), icon: '⭐' },
+  ];
+  const HIGHWAY_NAV = [
+    { path: '/highway/dashboard',    label: t('dashboard'),   icon: '⛽' },
+    { path: '/highway/ads',          label: t('adCampaigns'), icon: '📢' },
+    { path: '/highway/analytics',    label: t('analytics'),   icon: '📈' },
+    { path: '/highway/profile',      label: t('myProfile'),   icon: '✏️' },
+    { path: '/highway/subscription', label: t('subscription'), icon: '⭐' },
+  ];
+
   const navItems =
-    userType === 'trucker' ? TRUCKER_NAV :
-    userType === 'loader_company' ? LOADER_NAV :
+    userType === 'trucker'          ? TRUCKER_NAV :
+    userType === 'loader_company'   ? LOADER_NAV :
     userType === 'highway_business' ? HIGHWAY_NAV :
     MERCHANT_NAV;
+
   const portalLabel =
-    userType === 'trucker' ? 'Trucker Portal' :
-    userType === 'loader_company' ? 'Loader Portal' :
-    userType === 'highway_business' ? 'Highway Portal' :
-    'Merchant Portal';
-  const isTrucker = userType === 'trucker';
+    userType === 'trucker'          ? t('truckerPortal') :
+    userType === 'loader_company'   ? t('loaderPortal') :
+    userType === 'highway_business' ? t('highwayPortal') :
+    t('merchantPortal');
 
   async function handleLogout() {
     await logout();
@@ -64,7 +64,7 @@ export default function Layout() {
           <p className="text-sm text-slate-400 mt-1">{portalLabel}</p>
         </div>
 
-        <nav className="flex-1 p-4 space-y-1">
+        <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
           {navItems.map((item) => (
             <Link
               key={item.path}
@@ -81,19 +81,17 @@ export default function Layout() {
           ))}
         </nav>
 
-        <div className="p-4 border-t border-slate-700">
-          <div className="text-sm text-slate-300 mb-1">{user?.fullName}</div>
-          <div className="text-xs text-slate-400 mb-2">{user?.phoneNumber}</div>
-          {isTrucker && (
-            <div className="mb-3">
-              <LanguageSelector />
-            </div>
-          )}
+        <div className="p-4 border-t border-slate-700 space-y-3">
+          <div>
+            <div className="text-sm text-slate-300">{user?.fullName}</div>
+            <div className="text-xs text-slate-400">{user?.phoneNumber}</div>
+          </div>
+          <LanguageSelector />
           <button
             onClick={handleLogout}
             className="w-full text-sm text-slate-400 hover:text-white transition-colors text-left"
           >
-            Sign out →
+            {t('signOut')} →
           </button>
         </div>
       </aside>

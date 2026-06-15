@@ -7,7 +7,7 @@ export default function LoginPage() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const { login, isLoading, error, clearError } = useAuthStore();
-  const { lang, setLang } = useI18n();
+  const { lang, setLang, t } = useI18n();
   const navigate = useNavigate();
 
   async function handleSubmit(e: React.FormEvent) {
@@ -41,7 +41,7 @@ export default function LoginPage() {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mobile Number</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('mobileNumber')}</label>
             <div className="flex">
               <span className="inline-flex items-center px-3 rounded-l-lg border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">+91</span>
               <input
@@ -75,21 +75,21 @@ export default function LoginPage() {
             disabled={isLoading}
             className="w-full bg-orange-500 text-white py-3 rounded-lg font-semibold hover:bg-orange-600 transition-colors disabled:opacity-50"
           >
-            {isLoading ? 'Logging in…' : 'Login →'}
+            {isLoading ? t('loggingIn') : t('loginButton')}
           </button>
         </form>
 
         {/* Register link */}
         <p className="text-center text-sm text-gray-500 mt-5">
-          New here?{' '}
+          {t('newHere')}{' '}
           <Link to="/register" className="text-orange-500 font-medium hover:underline">
-            Create an account
+            {t('createAccount')}
           </Link>
         </p>
 
         {/* Test credentials box */}
         <div className="mt-5 p-4 bg-amber-50 border border-amber-200 rounded-lg text-xs text-gray-600 space-y-1">
-          <p className="font-semibold text-amber-700 mb-2">Test Credentials (all use TruckQA@2024)</p>
+          <p className="font-semibold text-amber-700 mb-2">Test Credentials (all use Admin@123)</p>
           <p>🏪 Merchant:         9880001001</p>
           <p>🚛 Trucker:          9770001001</p>
           <p>🔧 Admin:            9990001001</p>
