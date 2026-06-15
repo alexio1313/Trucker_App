@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { loadsApi } from '@truck-platform/api-client';
 import { CreateLoadInput, TruckType, CargoType } from '@truck-platform/shared';
@@ -7,6 +7,124 @@ import { useAuthStore } from '@truck-platform/state';
 const TRUCK_TYPES: TruckType[] = ['mini', 'light', 'medium', 'heavy', 'trailer'];
 const CARGO_TYPES: CargoType[] = ['general', 'fragile', 'hazmat', 'temperature_controlled', 'liquid', 'oversized'];
 const LOADER_API = 'http://192.168.8.101:3002/api/v1/loader-cos';
+
+const INDIA_CITIES: Record<string, { lat: number; lng: number; state: string }> = {
+  'Mumbai': { lat: 19.0760, lng: 72.8777, state: 'Maharashtra' },
+  'Delhi': { lat: 28.6139, lng: 77.2090, state: 'Delhi' },
+  'Bangalore': { lat: 12.9716, lng: 77.5946, state: 'Karnataka' },
+  'Hyderabad': { lat: 17.3850, lng: 78.4867, state: 'Telangana' },
+  'Chennai': { lat: 13.0827, lng: 80.2707, state: 'Tamil Nadu' },
+  'Kolkata': { lat: 22.5726, lng: 88.3639, state: 'West Bengal' },
+  'Pune': { lat: 18.5204, lng: 73.8567, state: 'Maharashtra' },
+  'Ahmedabad': { lat: 23.0225, lng: 72.5714, state: 'Gujarat' },
+  'Jaipur': { lat: 26.9124, lng: 75.7873, state: 'Rajasthan' },
+  'Lucknow': { lat: 26.8467, lng: 80.9462, state: 'Uttar Pradesh' },
+  'Kanpur': { lat: 26.4499, lng: 80.3319, state: 'Uttar Pradesh' },
+  'Nagpur': { lat: 21.1458, lng: 79.0882, state: 'Maharashtra' },
+  'Indore': { lat: 22.7196, lng: 75.8577, state: 'Madhya Pradesh' },
+  'Bhopal': { lat: 23.2599, lng: 77.4126, state: 'Madhya Pradesh' },
+  'Visakhapatnam': { lat: 17.6868, lng: 83.2185, state: 'Andhra Pradesh' },
+  'Patna': { lat: 25.5941, lng: 85.1376, state: 'Bihar' },
+  'Vadodara': { lat: 22.3072, lng: 73.1812, state: 'Gujarat' },
+  'Ludhiana': { lat: 30.9010, lng: 75.8573, state: 'Punjab' },
+  'Agra': { lat: 27.1767, lng: 78.0081, state: 'Uttar Pradesh' },
+  'Nashik': { lat: 19.9975, lng: 73.7898, state: 'Maharashtra' },
+  'Faridabad': { lat: 28.4089, lng: 77.3178, state: 'Haryana' },
+  'Meerut': { lat: 28.9845, lng: 77.7064, state: 'Uttar Pradesh' },
+  'Rajkot': { lat: 22.3039, lng: 70.8022, state: 'Gujarat' },
+  'Varanasi': { lat: 25.3176, lng: 82.9739, state: 'Uttar Pradesh' },
+  'Amritsar': { lat: 31.6340, lng: 74.8723, state: 'Punjab' },
+  'Coimbatore': { lat: 11.0168, lng: 76.9558, state: 'Tamil Nadu' },
+  'Ranchi': { lat: 23.3441, lng: 85.3096, state: 'Jharkhand' },
+  'Guwahati': { lat: 26.1445, lng: 91.7362, state: 'Assam' },
+  'Chandigarh': { lat: 30.7333, lng: 76.7794, state: 'Punjab' },
+  'Kochi': { lat: 9.9312, lng: 76.2673, state: 'Kerala' },
+  'Mysuru': { lat: 12.2958, lng: 76.6394, state: 'Karnataka' },
+  'Surat': { lat: 21.1702, lng: 72.8311, state: 'Gujarat' },
+  'Vijayawada': { lat: 16.5062, lng: 80.6480, state: 'Andhra Pradesh' },
+  'Jodhpur': { lat: 26.2389, lng: 73.0243, state: 'Rajasthan' },
+  'Raipur': { lat: 21.2514, lng: 81.6296, state: 'Chhattisgarh' },
+  'Kota': { lat: 25.2138, lng: 75.8648, state: 'Rajasthan' },
+  'Gurgaon': { lat: 28.4595, lng: 77.0266, state: 'Haryana' },
+  'Noida': { lat: 28.5355, lng: 77.3910, state: 'Uttar Pradesh' },
+  'Navi Mumbai': { lat: 19.0330, lng: 73.0297, state: 'Maharashtra' },
+  'Mangalore': { lat: 12.9141, lng: 74.8560, state: 'Karnataka' },
+  'Hubli': { lat: 15.3647, lng: 75.1240, state: 'Karnataka' },
+  'Madurai': { lat: 9.9252, lng: 78.1198, state: 'Tamil Nadu' },
+  'Bhiwandi': { lat: 19.2815, lng: 73.0632, state: 'Maharashtra' },
+  'Thiruvananthapuram': { lat: 8.5241, lng: 76.9366, state: 'Kerala' },
+  'Goa': { lat: 15.2993, lng: 74.1240, state: 'Goa' },
+  'Aurangabad': { lat: 19.8762, lng: 75.3433, state: 'Maharashtra' },
+  'Thane': { lat: 19.2183, lng: 72.9781, state: 'Maharashtra' },
+  'Tumkur': { lat: 13.3400, lng: 77.1010, state: 'Karnataka' },
+  'Jamshedpur': { lat: 22.8046, lng: 86.2029, state: 'Jharkhand' },
+  'Ghaziabad': { lat: 28.6692, lng: 77.4538, state: 'Uttar Pradesh' },
+};
+
+function CityInput({
+  value,
+  onChange,
+  onSelect,
+  placeholder,
+  required,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSelect: (city: string, state: string, lat: number, lng: number) => void;
+  placeholder: string;
+  required?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const suggestions = value.length >= 1
+    ? Object.entries(INDIA_CITIES).filter(([city]) =>
+        city.toLowerCase().startsWith(value.toLowerCase())
+      ).slice(0, 6)
+    : [];
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  return (
+    <div className="relative" ref={ref}>
+      <input
+        required={required}
+        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+        value={value}
+        placeholder={placeholder}
+        autoComplete="off"
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+      />
+      {open && suggestions.length > 0 && (
+        <ul className="absolute z-50 w-full bg-white border border-gray-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+          {suggestions.map(([city, data]) => (
+            <li key={city}>
+              <button
+                type="button"
+                className="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 flex items-center justify-between"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  onSelect(city, data.state, data.lat, data.lng);
+                  setOpen(false);
+                }}
+              >
+                <span className="font-medium text-gray-800">{city}</span>
+                <span className="text-xs text-gray-400">{data.state}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 const INITIAL_STATE: CreateLoadInput = {
   origin: { lat: 0, lng: 0, address: '', city: '', state: '' },
@@ -137,12 +255,14 @@ export default function PostLoadPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">City *</label>
-              <input
+              <CityInput
                 required
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
                 value={form.origin.city}
-                onChange={(e) => setOriginField('city', e.target.value)}
-                placeholder="Mumbai"
+                placeholder="e.g. Mumbai"
+                onChange={(v) => setOriginField('city', v)}
+                onSelect={(city, state, lat, lng) =>
+                  setForm(f => ({ ...f, origin: { ...f.origin, city, state, lat, lng } }))
+                }
               />
             </div>
             <div>
@@ -152,7 +272,7 @@ export default function PostLoadPage() {
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
                 value={form.origin.state}
                 onChange={(e) => setOriginField('state', e.target.value)}
-                placeholder="Maharashtra"
+                placeholder="auto-filled on city select"
               />
             </div>
             <div className="col-span-2">
@@ -165,30 +285,24 @@ export default function PostLoadPage() {
                 placeholder="Warehouse No. 5, MIDC..."
               />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Latitude *</label>
-              <input
-                required
-                type="number"
-                step="any"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                value={form.origin.lat || ''}
-                onChange={(e) => setOriginField('lat', parseFloat(e.target.value))}
-                placeholder="19.0760"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Longitude *</label>
-              <input
-                required
-                type="number"
-                step="any"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                value={form.origin.lng || ''}
-                onChange={(e) => setOriginField('lng', parseFloat(e.target.value))}
-                placeholder="72.8777"
-              />
-            </div>
+            {form.origin.lat ? (
+              <div className="col-span-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700">
+                📍 Coordinates auto-filled: {form.origin.lat.toFixed(4)}, {form.origin.lng.toFixed(4)}
+                <input type="hidden" required value={form.origin.lat} />
+                <input type="hidden" required value={form.origin.lng} />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Latitude *</label>
+                  <input required type="number" step="any" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" value={form.origin.lat || ''} onChange={(e) => setOriginField('lat', parseFloat(e.target.value))} placeholder="19.0760" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Longitude *</label>
+                  <input required type="number" step="any" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" value={form.origin.lng || ''} onChange={(e) => setOriginField('lng', parseFloat(e.target.value))} placeholder="72.8777" />
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -198,12 +312,14 @@ export default function PostLoadPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-600 mb-1">City *</label>
-              <input
+              <CityInput
                 required
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
                 value={form.destination.city}
-                onChange={(e) => setDestField('city', e.target.value)}
-                placeholder="Delhi"
+                placeholder="e.g. Delhi"
+                onChange={(v) => setDestField('city', v)}
+                onSelect={(city, state, lat, lng) =>
+                  setForm(f => ({ ...f, destination: { ...f.destination, city, state, lat, lng } }))
+                }
               />
             </div>
             <div>
@@ -213,7 +329,7 @@ export default function PostLoadPage() {
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
                 value={form.destination.state}
                 onChange={(e) => setDestField('state', e.target.value)}
-                placeholder="Delhi"
+                placeholder="auto-filled on city select"
               />
             </div>
             <div className="col-span-2">
@@ -226,30 +342,24 @@ export default function PostLoadPage() {
                 placeholder="Plot 12, Okhla Industrial..."
               />
             </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Latitude *</label>
-              <input
-                required
-                type="number"
-                step="any"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                value={form.destination.lat || ''}
-                onChange={(e) => setDestField('lat', parseFloat(e.target.value))}
-                placeholder="28.6139"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Longitude *</label>
-              <input
-                required
-                type="number"
-                step="any"
-                className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                value={form.destination.lng || ''}
-                onChange={(e) => setDestField('lng', parseFloat(e.target.value))}
-                placeholder="77.2090"
-              />
-            </div>
+            {form.destination.lat ? (
+              <div className="col-span-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700">
+                📍 Coordinates auto-filled: {form.destination.lat.toFixed(4)}, {form.destination.lng.toFixed(4)}
+                <input type="hidden" required value={form.destination.lat} />
+                <input type="hidden" required value={form.destination.lng} />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Latitude *</label>
+                  <input required type="number" step="any" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" value={form.destination.lat || ''} onChange={(e) => setDestField('lat', parseFloat(e.target.value))} placeholder="28.6139" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Longitude *</label>
+                  <input required type="number" step="any" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" value={form.destination.lng || ''} onChange={(e) => setDestField('lng', parseFloat(e.target.value))} placeholder="77.2090" />
+                </div>
+              </>
+            )}
           </div>
         </div>
 

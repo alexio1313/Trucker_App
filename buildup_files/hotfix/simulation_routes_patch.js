@@ -309,4 +309,219 @@ router.patch('/trucker-location', async (req, res) => {
   }
 });
 
+// POST /api/v1/simulation/seed-q1-data — loader companies, highway businesses, accepted loads
+router.post('/seed-q1-data', async (_req, res) => {
+  try {
+    const LC_USERS = {
+      bangalore: 'f4000000-0000-0000-0000-000000000001',
+      delhi:     'f4000000-0000-0000-0000-000000000002',
+      mumbai:    'f4000000-0000-0000-0000-000000000003',
+    };
+    const HB_USERS = {
+      blr_fuel: 'f5000000-0000-0000-0000-000000000001',
+      blr_rest: 'f5000000-0000-0000-0000-000000000002',
+      del_fuel: 'f5000000-0000-0000-0000-000000000003',
+      mum_fuel: 'f5000000-0000-0000-0000-000000000004',
+      mum_rest: 'f5000000-0000-0000-0000-000000000005',
+      blr_mech: 'f5000000-0000-0000-0000-000000000006',
+    };
+
+    // 1. Loader company users — phone-based upsert
+    async function upsertLCUser(preferredId, fullName, phone, hash) {
+      const row = await queryOne(
+        `INSERT INTO users (user_id, user_type, full_name, phone_number, password_hash, kyc_status, kyc_reviewed_at)
+         VALUES ($1,'loader_company',$2,$3,$4,'verified',NOW())
+         ON CONFLICT (phone_number) DO UPDATE SET user_type='loader_company', updated_at=NOW()
+         RETURNING user_id`,
+        [preferredId, fullName, phone, hash]
+      );
+      return row.user_id;
+    }
+    LC_USERS.bangalore = await upsertLCUser(LC_USERS.bangalore,'Shiva Loaders Bangalore','+919870001001',SIM_HASH);
+    LC_USERS.delhi     = await upsertLCUser(LC_USERS.delhi,    'Ram Loaders Delhi',      '+919870001002',SIM_HASH);
+    LC_USERS.mumbai    = await upsertLCUser(LC_USERS.mumbai,   'Ganesh Loaders Mumbai',  '+919870001003',SIM_HASH);
+
+    // 2. Loader companies — upsert via check+insert
+    async function upsertLoaderCo(ownerId, name, cities, maxJobs, rating, jobs) {
+      let row = await queryOne('SELECT id FROM loader_companies WHERE owner_id=$1', [ownerId]);
+      if (!row) {
+        row = await queryOne(
+          `INSERT INTO loader_companies (owner_id,company_name,coverage_cities,max_concurrent_jobs,status,avg_rating,total_jobs)
+           VALUES ($1,$2,$3,$4,'active',$5,$6) RETURNING id`,
+          [ownerId, name, cities, maxJobs, rating, jobs]
+        );
+      } else {
+        await query("UPDATE loader_companies SET status='active',updated_at=NOW() WHERE owner_id=$1", [ownerId]);
+      }
+      return row;
+    }
+    const blrLc = await upsertLoaderCo(LC_USERS.bangalore,'Shiva Loaders',['Bangalore','Mumbai','Pune'],10,4.7,48);
+    const delLc = await upsertLoaderCo(LC_USERS.delhi,'Ram Loaders',['Delhi','Gurgaon','Noida','Agra'],8,4.5,33);
+    const mumLc = await upsertLoaderCo(LC_USERS.mumbai,'Ganesh Loaders',['Mumbai','Navi Mumbai','Thane','Pune'],12,4.8,72);
+
+    // 3. Loader workers
+    const workerData = [
+      [blrLc.id,'Raju B','+919870002001',['loading','unloading','forklift']],
+      [blrLc.id,'Krishnan S','+919870002002',['loading','unloading']],
+      [delLc.id,'Ravi D','+919870002003',['loading','unloading','crane']],
+      [delLc.id,'Suresh D','+919870002004',['loading','unloading']],
+      [mumLc.id,'Ganesh M','+919870002005',['loading','unloading','forklift']],
+      [mumLc.id,'Arun M','+919870002006',['loading','unloading']],
+      [mumLc.id,'Pradeep M','+919870002007',['loading','unloading','crane']],
+    ];
+    for (const [cid, name, phone, skills] of workerData) {
+      await query(
+        `INSERT INTO loader_workers (company_id,name,phone,skill_tags,status) VALUES ($1,$2,$3,$4,'active') ON CONFLICT DO NOTHING`,
+        [cid, name, phone, skills]
+      );
+    }
+
+    // 4. Highway business users — use phone-based upsert to handle existing phone numbers
+    async function upsertHBUser(preferredId, userType, fullName, phone, hash) {
+      const row = await queryOne(
+        `INSERT INTO users (user_id, user_type, full_name, phone_number, password_hash, kyc_status, kyc_reviewed_at)
+         VALUES ($1,$2,$3,$4,$5,'verified',NOW())
+         ON CONFLICT (phone_number) DO UPDATE SET user_type=EXCLUDED.user_type, updated_at=NOW()
+         RETURNING user_id`,
+        [preferredId, userType, fullName, phone, hash]
+      );
+      return row.user_id;
+    }
+    const blrFuelId  = await upsertHBUser(HB_USERS.blr_fuel, 'highway_business','NH-4 Fuel BLR',         '+919880001001', SIM_HASH);
+    const blrRestId  = await upsertHBUser(HB_USERS.blr_rest, 'highway_business','Dhaba BLR NH-4',         '+919880001002', SIM_HASH);
+    const delFuelId  = await upsertHBUser(HB_USERS.del_fuel, 'highway_business','NH-1 Fuel Delhi',         '+919880001003', SIM_HASH);
+    const mumFuelId  = await upsertHBUser(HB_USERS.mum_fuel, 'highway_business','Western Express Fuel MUM','+919880001004', SIM_HASH);
+    const mumRestId  = await upsertHBUser(HB_USERS.mum_rest, 'highway_business','Highway Dhaba Mumbai',    '+919880001005', SIM_HASH);
+    const blrMechId  = await upsertHBUser(HB_USERS.blr_mech, 'highway_business','Tumkur Truck Service',    '+919880001006', SIM_HASH);
+
+    // 5. Highway businesses — correct category values: 'fuel','dhaba','service_center','tyre_shop','truck_stop'
+    const bizData = [
+      [blrFuelId, 'NH-4 Fuel Station BLR', 'fuel',           12.9553, 77.5616, 'Tumkur Road, Bangalore',       'NH-4 Bangalore','premium',4.5,500, '+919880001001'],
+      [blrRestId, 'Highway Dhaba BLR',      'dhaba',          13.1200, 77.5946, 'NH-7 near Dobbaspet, BLR',    'NH-7 Bangalore','basic',  4.2,200, '+919880001002'],
+      [delFuelId, 'NH-1 Fuel Delhi',        'fuel',           28.7041, 77.1025, 'GT Karnal Road, Delhi',        'NH-1 Delhi',    'premium',4.6,600, '+919880001003'],
+      [mumFuelId, 'Western Express Fuel',   'fuel',           19.1136, 72.8697, 'Western Express Highway, MUM', 'WEH Mumbai',    'basic',  4.3,300, '+919880001004'],
+      [mumRestId, 'Highway Dhaba Mumbai',   'dhaba',          19.2183, 72.9781, 'NH-3 Thane bypass',           'NH-3 Thane',    'basic',  4.1,150, '+919880001005'],
+      [blrMechId, 'Tumkur Truck Service',   'service_center', 13.3400, 77.1010, 'NH-4 Tumkur',                 'NH-4 Tumkur',   'basic',  4.4,100, '+919880001006'],
+    ];
+    const bizIds = {};
+    for (const [uid, name, cat, lat, lng, addr, hwName, tier, rating, credits, phone] of bizData) {
+      let row = await queryOne('SELECT id FROM highway_businesses WHERE owner_id=$1', [uid]);
+      if (!row) {
+        row = await queryOne(
+          `INSERT INTO highway_businesses
+             (owner_id,business_name,category,phone,location_lat,location_lng,location,address,highway_name,
+              subscription_tier,avg_rating,ad_credits_balance,is_open_24hr,is_verified,status)
+           VALUES ($1,$2,$3,$4,${lat},${lng},ST_SetSRID(ST_MakePoint(${lng},${lat}),4326),$5,$6,$7,$8,$9,true,true,'active')
+           RETURNING id`,
+          [uid, name, cat, phone, addr, hwName, tier, rating, credits]
+        );
+      } else {
+        await query(
+          "UPDATE highway_businesses SET status='active',is_verified=true,ad_credits_balance=$1,updated_at=NOW() WHERE id=$2",
+          [credits, row.id]
+        );
+      }
+      bizIds[uid] = row.id;
+    }
+
+    // 6. Highway ads — budget_total=NULL means unlimited (serve query checks IS NULL as passing)
+    const adData = [
+      [bizIds[blrFuelId], 'Full tank discount',  '₹2/L off on diesel — trucks only',   'TRUCKFUEL',   ['fuel'],                500],
+      [bizIds[blrRestId], 'Driver meal combo',   'Thali + chai ₹80',                    'DHABAMEAL',   ['meal','rest'],          200],
+      [bizIds[delFuelId], 'NH-1 Fuel Deal',      '₹3/L off for fleet trucks',            'NH1FUEL',     ['fuel'],                400],
+      [bizIds[mumFuelId], 'Fast refuel lane',    'Zero queue — dedicated truck lane',    'FASTFUEL',    ['fuel'],                300],
+      [bizIds[mumRestId], 'Rest stop special',   'Free chai with any meal',              'MUMDHABA',    ['meal','rest'],          150],
+      [bizIds[blrMechId], '24h truck service',   'Emergency tyre & service NH-4',       'TUMKURTYRES', ['fuel','rest','meal'],   100],
+    ];
+    for (const [bizId, title, desc, code, breakTypes, credits] of adData) {
+      if (!bizId) continue;
+      const existAd = await queryOne('SELECT id FROM highway_ads WHERE business_id=$1 AND offer_code=$2', [bizId, code]);
+      if (!existAd) {
+        await query(
+          `INSERT INTO highway_ads (business_id,title,description,offer_code,target_break_types,radius_km,budget_total,status)
+           VALUES ($1,$2,$3,$4,$5,50,NULL,'active')`,
+          [bizId, title, desc, code, breakTypes]
+        );
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        message: 'Q1-Q4 test data seeded: 3 loader companies + 7 workers + 6 highway businesses + 6 ads',
+        loaderCompanyLogins: [
+          { city: 'Bangalore', phone: '+919870001001', password: 'Admin@123' },
+          { city: 'Delhi',     phone: '+919870001002', password: 'Admin@123' },
+          { city: 'Mumbai',    phone: '+919870001003', password: 'Admin@123' },
+        ],
+      }
+    });
+  } catch (e) {
+    console.error('[simulation] seed-q1-data error:', e.message);
+    res.status(500).json({ success: false, error: { code: 'DB_ERROR', message: e.message } });
+  }
+});
+
+// POST /api/v1/simulation/assign-load  { truckerCity: 'bangalore'|'delhi'|'mumbai' }
+// Gives a sim trucker their first 'accepted' load for testing the Journey page
+router.post('/assign-load', async (req, res) => {
+  const { truckerCity } = req.body || {};
+  const cityKey = (truckerCity || 'bangalore').toLowerCase();
+  const trucker = SIM.truckers[cityKey];
+  if (!trucker) {
+    return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'truckerCity must be bangalore, delhi, or mumbai' } });
+  }
+  try {
+    // Check if trucker already has an active load
+    const existing = await queryOne(
+      "SELECT load_id FROM loads WHERE trucker_id=$1 AND status IN ('accepted','loading','in_transit') LIMIT 1",
+      [trucker.userId]
+    );
+    if (existing) {
+      return res.json({ success: true, data: { message: 'Trucker already has an active load', loadId: existing.load_id } });
+    }
+    // Find a posted load from the sim merchant for this city
+    const merchantId = SIM.merchants[cityKey];
+    let load = await queryOne(
+      "SELECT load_id FROM loads WHERE merchant_id=$1 AND status='posted' AND trucker_id IS NULL LIMIT 1",
+      [merchantId]
+    );
+    // Seed loads if none exist
+    if (!load) {
+      const cityData = CITY_COORDS[cityKey];
+      const loadsArr = LOADS_BY_CITY[cityKey];
+      const l = loadsArr[0];
+      const loadId = `SIM_${cityKey.substring(0,3).toUpperCase()}_ASSIGN_${Date.now()}`;
+      const now = new Date();
+      await query(
+        `INSERT INTO loads (load_id,merchant_id,status,
+           origin_lat,origin_lng,origin_address,origin_city,origin_state,
+           dest_lat,dest_lng,dest_address,dest_city,dest_state,
+           cargo_weight_kg,cargo_type,pickup_start,pickup_end,delivery_expected,
+           distance_km,agreed_price,platform_commission,commission_percent,net_trucker_earning,ai_suggested_price)
+         VALUES ($1,$2,'posted',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,5.00,$21,$22)`,
+        [loadId, merchantId,
+         cityData.lat, cityData.lng, l.fromAddr, cityData.name, cityData.state,
+         l.toLat, l.toLng, l.toAddr, l.toCity, l.toState,
+         l.weight, l.cargo,
+         new Date(now.getTime()+2*3600000).toISOString(),
+         new Date(now.getTime()+8*3600000).toISOString(),
+         new Date(now.getTime()+(l.dist/50)*3600000).toISOString(),
+         l.dist, l.price, Math.round(l.price*0.05),
+         Math.round(l.price*0.95), l.price]
+      );
+      load = { load_id: loadId };
+    }
+    // Assign load to trucker
+    await query(
+      "UPDATE loads SET trucker_id=$1, status='accepted', updated_at=NOW() WHERE load_id=$2",
+      [trucker.userId, load.load_id]
+    );
+    res.json({ success: true, data: { message: `Load ${load.load_id} assigned to ${cityKey} sim trucker`, loadId: load.load_id, truckerUserId: trucker.userId } });
+  } catch (e) {
+    console.error('[simulation] assign-load error:', e.message);
+    res.status(500).json({ success: false, error: { code: 'DB_ERROR', message: e.message } });
+  }
+});
+
 module.exports = router;

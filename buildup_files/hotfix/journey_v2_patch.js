@@ -5,6 +5,177 @@ const { query, queryOne } = require('./db/postgres');
 const router = Router();
 function getUserId(req) { return req.headers['x-user-id']; }
 
+// Create fuel_stops table if not present (runs once on load)
+query(`CREATE TABLE IF NOT EXISTS fuel_stops (
+  stop_id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  load_id VARCHAR(50) REFERENCES loads(load_id) ON DELETE CASCADE,
+  journey_log_id UUID REFERENCES journey_logs(id) ON DELETE CASCADE,
+  fuel_liters DECIMAL(8,2) NOT NULL,
+  fuel_cost DECIMAL(10,2) NOT NULL,
+  odometer_km INTEGER,
+  fuel_station_name VARCHAR(255),
+  logged_at TIMESTAMPTZ DEFAULT NOW()
+)`).catch(() => {});
+
+// GET /api/v1/truckers/my/journey/active-load
+router.get('/active-load', async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const load = await queryOne(
+      `SELECT l.*, u.full_name AS merchant_name
+       FROM loads l
+       LEFT JOIN users u ON l.merchant_id = u.user_id
+       WHERE l.trucker_id=$1 AND l.status IN ('accepted','loading','in_transit')
+       ORDER BY l.updated_at DESC LIMIT 1`,
+      [userId]
+    );
+    if (!load) return res.json({ success: true, data: { load: null } });
+
+    const jl = await queryOne(
+      'SELECT * FROM journey_logs WHERE load_id=$1 ORDER BY created_at DESC LIMIT 1',
+      [load.load_id]
+    );
+
+    let fuelStops = [];
+    let totalFuelLiters = 0, totalFuelCost = 0, actualTollCost = 0;
+    if (jl) {
+      fuelStops = await query(
+        'SELECT * FROM fuel_stops WHERE journey_log_id=$1 ORDER BY logged_at ASC',
+        [jl.id]
+      );
+      for (const f of fuelStops) {
+        totalFuelLiters += parseFloat(f.fuel_liters || 0);
+        totalFuelCost += parseFloat(f.fuel_cost || 0);
+      }
+      const tolls = await query(
+        'SELECT amount_paid FROM toll_crossings WHERE load_id=$1',
+        [load.load_id]
+      );
+      for (const t of tolls) actualTollCost += parseFloat(t.amount_paid || 0);
+    }
+
+    res.json({
+      success: true,
+      data: {
+        load,
+        journey: jl ? {
+          log_id: jl.id,
+          journey_status: jl.status,
+          start_odometer_km: jl.start_odometer_km || null,
+          total_fuel_liters: totalFuelLiters || null,
+          total_fuel_cost: totalFuelCost || null,
+          actual_toll_cost: actualTollCost || null,
+          journey_started_at: jl.started_at,
+        } : null,
+        fuelStops: fuelStops.map(f => ({
+          stop_id: f.stop_id,
+          fuel_liters: parseFloat(f.fuel_liters),
+          fuel_cost: parseFloat(f.fuel_cost),
+          odometer_km: f.odometer_km,
+          fuel_station_name: f.fuel_station_name,
+          logged_at: f.logged_at,
+        })),
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+  }
+});
+
+// POST /api/v1/truckers/my/journey/begin-loading
+router.post('/begin-loading', async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { loadId } = req.body;
+    if (!loadId) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'loadId required' } });
+    // Mark load as loading
+    await query("UPDATE loads SET status='loading', updated_at=NOW() WHERE load_id=$1 AND trucker_id=$2", [loadId, userId]);
+    // Create journey_log record if not exists
+    await query(
+      "INSERT INTO journey_logs (load_id, trucker_id, status) VALUES ($1,$2,'active') ON CONFLICT DO NOTHING",
+      [loadId, userId]
+    );
+    // Record arrival in loading_jobs (like arrived-pickup)
+    const load = await queryOne('SELECT loading_arrangement, detention_rate_per_hour FROM loads WHERE load_id=$1', [loadId]);
+    if (load) {
+      const gracePeriodEnd = new Date(Date.now() + 120 * 60 * 1000); // 2 hour grace
+      await query(
+        `INSERT INTO loading_jobs (load_id, arrangement_type, arranged_by_user_id, trucker_arrival_time, detention_started_at, detention_rate_per_hour)
+         VALUES ($1,$2,$3,NOW(),$4,$5) ON CONFLICT DO NOTHING`,
+        [loadId, load.loading_arrangement || 'not_required', userId,
+         load.loading_arrangement === 'merchant_arranged' ? gracePeriodEnd : null,
+         load.detention_rate_per_hour || 75]
+      );
+    }
+    res.json({ success: true, data: { message: 'Arrived at pickup — loading started. Merchant notified.' } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+  }
+});
+
+// POST /api/v1/truckers/my/journey/start
+router.post('/start', async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { loadId, startOdometerKm } = req.body;
+    if (!loadId) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'loadId required' } });
+    // Mark load as in_transit
+    await query("UPDATE loads SET status='in_transit', updated_at=NOW() WHERE load_id=$1 AND trucker_id=$2", [loadId, userId]);
+    // Update or create journey_log
+    const existing = await queryOne('SELECT id FROM journey_logs WHERE load_id=$1 AND trucker_id=$2', [loadId, userId]);
+    if (existing) {
+      await query(
+        'UPDATE journey_logs SET started_at=NOW(), status=$1 WHERE id=$2',
+        ['active', existing.id]
+      );
+    } else {
+      await query(
+        "INSERT INTO journey_logs (load_id, trucker_id, started_at, status) VALUES ($1,$2,NOW(),'active')",
+        [loadId, userId]
+      );
+    }
+    res.json({ success: true, data: { message: 'Journey started!', startedAt: new Date().toISOString() } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+  }
+});
+
+// POST /api/v1/truckers/my/journey/fuel-stop
+router.post('/fuel-stop', async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { loadId, fuelLiters, fuelCost, odometerKm, stationName } = req.body;
+    if (!loadId || !fuelLiters || !fuelCost) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'loadId, fuelLiters, fuelCost required' } });
+    const jl = await queryOne('SELECT id FROM journey_logs WHERE load_id=$1 AND trucker_id=$2 ORDER BY created_at DESC LIMIT 1', [loadId, userId]);
+    const stop = await queryOne(
+      'INSERT INTO fuel_stops (load_id, journey_log_id, fuel_liters, fuel_cost, odometer_km, fuel_station_name) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+      [loadId, jl?.id || null, parseFloat(fuelLiters), parseFloat(fuelCost), odometerKm ? parseInt(odometerKm) : null, stationName || null]
+    );
+    res.status(201).json({ success: true, data: { stopId: stop.stop_id, fuelLiters: stop.fuel_liters, fuelCost: stop.fuel_cost, loggedAt: stop.logged_at } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+  }
+});
+
+// POST /api/v1/truckers/my/journey/deliver
+router.post('/deliver', async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { loadId, endOdometerKm, actualTollCost } = req.body;
+    if (!loadId) return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'loadId required' } });
+    // Mark load as delivered
+    await query("UPDATE loads SET status='delivered', updated_at=NOW() WHERE load_id=$1 AND trucker_id=$2", [loadId, userId]);
+    // Complete journey_log
+    await query(
+      "UPDATE journey_logs SET status='completed', ended_at=NOW() WHERE load_id=$1 AND trucker_id=$2 AND status='active'",
+      [loadId, userId]
+    );
+    res.json({ success: true, data: { message: 'Delivery confirmed! Payment will be processed shortly.', deliveredAt: new Date().toISOString() } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+  }
+});
+
 // POST /api/v1/truckers/my/journey/arrived-pickup
 router.post('/arrived-pickup', async (req, res) => {
   try {

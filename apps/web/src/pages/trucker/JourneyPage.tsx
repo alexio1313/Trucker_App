@@ -183,7 +183,7 @@ export default function JourneyPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${TRUCKER_API}/my/active-load`, { headers: getAuthHeaders(userId) });
+      const res = await fetch(`${TRUCKER_API}/my/journey/active-load`, { headers: getAuthHeaders(userId) });
       const json = await res.json();
       if (json.success && json.data.load) {
         setLoad(json.data.load);

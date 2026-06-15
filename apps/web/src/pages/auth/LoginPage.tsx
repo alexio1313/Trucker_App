@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuthStore } from '@truck-platform/state';
+import { useI18n, LANGUAGES } from '../../i18n/useI18n';
 
 export default function LoginPage() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const { login, isLoading, error, clearError } = useAuthStore();
+  const { lang, setLang } = useI18n();
   const navigate = useNavigate();
 
   async function handleSubmit(e: React.FormEvent) {
@@ -93,6 +95,27 @@ export default function LoginPage() {
           <p>🔧 Admin:            9990001001</p>
           <p>📦 Loader Company:   9660001001</p>
           <p>🛣️ Highway Business: 9550001001</p>
+        </div>
+
+        {/* Language selector */}
+        <div className="mt-5 border-t border-gray-100 pt-4">
+          <p className="text-center text-xs text-gray-400 mb-2">भाषा / Language</p>
+          <div className="flex flex-wrap justify-center gap-1.5">
+            {LANGUAGES.map(l => (
+              <button
+                key={l.code}
+                type="button"
+                onClick={() => setLang(l.code)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                  lang === l.code
+                    ? 'bg-orange-500 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-orange-100 hover:text-orange-700'
+                }`}
+              >
+                {l.native}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>

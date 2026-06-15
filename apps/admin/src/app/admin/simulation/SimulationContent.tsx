@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 const SIM_BASE = 'http://192.168.8.101:3002/api/v1/simulation';
 
@@ -40,6 +40,221 @@ function StatusBadge({ value }: { value: string }) {
     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${colors[value] ?? 'bg-gray-100 text-gray-600'}`}>
       {value}
     </span>
+  );
+}
+
+function Q1SeedPanel({ onDone }: { onDone: () => void }) {
+  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [msg, setMsg] = useState('');
+  const [creds, setCreds] = useState<any[]>([]);
+
+  async function run() {
+    setStatus('loading'); setMsg('');
+    try {
+      const r = await fetch(`${SIM_BASE}/seed-q1-data`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error?.message ?? 'Failed');
+      setStatus('done');
+      setMsg(json.data.message);
+      setCreds(json.data.loaderCompanyLogins ?? []);
+      onDone();
+    } catch (e: any) { setStatus('error'); setMsg(e.message); }
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-2xl">🏗️</span>
+        <div>
+          <h3 className="font-bold text-gray-900">Seed Q1-Q4 Test Data</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Loader companies + highway businesses + highway ads</p>
+        </div>
+      </div>
+      <div className="space-y-2 mb-4 text-xs text-gray-600">
+        <p>✅ 3 loader companies (Bangalore, Delhi, Mumbai) with workers</p>
+        <p>✅ 6 highway businesses (fuel stations, restaurants, mechanic)</p>
+        <p>✅ 6 highway ads (active, budget-limited)</p>
+        <p className="text-blue-600 font-medium">Loader company login: Admin@123</p>
+      </div>
+      <button onClick={run} disabled={status === 'loading'}
+        className="w-full bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition-colors">
+        {status === 'loading' ? '⏳ Seeding…' : '🏗️ Seed Q1-Q4 Data'}
+      </button>
+      {msg && (
+        <div className={`mt-3 p-3 rounded-lg text-sm ${status === 'done' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+          {status === 'done' ? '✅' : '❌'} {msg}
+        </div>
+      )}
+      {creds.length > 0 && (
+        <div className="mt-3 bg-teal-50 rounded-lg p-3 text-xs space-y-1">
+          <p className="font-semibold text-teal-800">Loader Company Logins:</p>
+          {creds.map((c: any) => <p key={c.phone} className="text-teal-700">{c.city}: {c.phone} / {c.password}</p>)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AssignLoadPanel({ onDone }: { onDone: () => void }) {
+  const [city, setCity] = useState('bangalore');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle');
+  const [msg, setMsg] = useState('');
+
+  async function run() {
+    setStatus('loading'); setMsg('');
+    try {
+      const r = await fetch(`${SIM_BASE}/assign-load`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ truckerCity: city }),
+      });
+      const json = await r.json();
+      if (!r.ok) throw new Error(json.error?.message ?? 'Failed');
+      setStatus('done');
+      setMsg(json.data.message);
+      onDone();
+    } catch (e: any) { setStatus('error'); setMsg(e.message); }
+  }
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-2xl">🔑</span>
+        <div>
+          <h3 className="font-bold text-gray-900">Assign Load to Trucker</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Sets an accepted load so trucker sees it in Journey</p>
+        </div>
+      </div>
+      <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs text-blue-700">
+        <p className="font-semibold">Use after "Seed Truckers" + "Seed Loads"</p>
+        <p className="mt-1">This sets a load to <code className="bg-blue-100 px-1 rounded">accepted</code> with the sim trucker's ID so their Journey page activates.</p>
+      </div>
+      <div className="mb-4">
+        <label className="block text-sm font-medium text-gray-700 mb-1">Trucker City</label>
+        <select value={city} onChange={(e) => setCity(e.target.value)}
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+          {SEED_CITIES.map((c) => <option key={c} value={c}>{CITY_LABEL[c]}</option>)}
+        </select>
+      </div>
+      <button onClick={run} disabled={status === 'loading'}
+        className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-semibold py-2.5 rounded-lg transition-colors">
+        {status === 'loading' ? '⏳ Assigning…' : '🔑 Assign Accepted Load'}
+      </button>
+      {msg && (
+        <div className={`mt-3 p-3 rounded-lg text-sm ${status === 'done' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+          {status === 'done' ? '✅' : '❌'} {msg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const TRUCKER_BASE = 'http://192.168.8.101:3002/api/v1/truckers';
+
+function AutoDrivePanel() {
+  const [truckerId, setTruckerId] = useState(SIM_TRUCKERS[0].id);
+  const [stepKm, setStepKm] = useState(30);
+  const [intervalSec, setIntervalSec] = useState(4);
+  const [running, setRunning] = useState(false);
+  const [log, setLog] = useState<string[]>([]);
+  const [ticks, setTicks] = useState(0);
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  async function doStep(tid: string, step: number) {
+    try {
+      const r = await fetch(`${TRUCKER_BASE}/advance-drive/${tid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stepKm: step }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error?.message ?? 'Failed');
+      const d = j.data;
+      if (d.arrived) {
+        setLog(prev => [`✅ ARRIVED at destination!`, ...prev.slice(0, 9)]);
+        stop();
+      } else {
+        setLog(prev => [`📍 Moved ${step} km → (${d.newLat.toFixed(4)}, ${d.newLng.toFixed(4)}) — ${d.remainingKm} km left`, ...prev.slice(0, 9)]);
+        setTicks(t => t + 1);
+      }
+    } catch (e: any) {
+      setLog(prev => [`❌ ${e.message}`, ...prev.slice(0, 9)]);
+    }
+  }
+
+  function start() {
+    setLog([]);
+    setTicks(0);
+    setRunning(true);
+    doStep(truckerId, stepKm);
+    intervalRef.current = setInterval(() => doStep(truckerId, stepKm), intervalSec * 1000);
+  }
+
+  function stop() {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    intervalRef.current = null;
+    setRunning(false);
+  }
+
+  useEffect(() => () => { if (intervalRef.current) clearInterval(intervalRef.current); }, []);
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-2xl">🚛</span>
+        <div>
+          <h3 className="font-bold text-gray-900">Auto Drive Simulation</h3>
+          <p className="text-xs text-gray-400 mt-0.5">Moves truck GPS toward load destination in real time</p>
+        </div>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4 text-xs text-blue-700">
+        Requires trucker to have an active load (status: accepted / loading / in_transit). Run <strong>Assign Load</strong> first.
+      </div>
+
+      <div className="space-y-3 mb-4">
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Trucker</label>
+          <select value={truckerId} onChange={e => setTruckerId(e.target.value)} disabled={running}
+            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+            {SIM_TRUCKERS.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Step (km per tick)</label>
+            <select value={stepKm} onChange={e => setStepKm(Number(e.target.value))} disabled={running}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              {[10, 20, 30, 50, 100].map(v => <option key={v} value={v}>{v} km</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Interval</label>
+            <select value={intervalSec} onChange={e => setIntervalSec(Number(e.target.value))} disabled={running}
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+              {[2, 3, 4, 5, 10].map(v => <option key={v} value={v}>{v}s</option>)}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-2 mb-3">
+        <button onClick={start} disabled={running}
+          className="flex-1 bg-green-600 hover:bg-green-700 disabled:opacity-40 text-white font-semibold py-2.5 rounded-lg transition-colors">
+          {running ? `🟢 Running… (${ticks} ticks)` : '▶ Start Auto Drive'}
+        </button>
+        <button onClick={stop} disabled={!running}
+          className="flex-1 bg-red-500 hover:bg-red-600 disabled:opacity-40 text-white font-semibold py-2.5 rounded-lg transition-colors">
+          ⏹ Stop
+        </button>
+      </div>
+
+      {log.length > 0 && (
+        <div className="bg-gray-900 rounded-lg p-3 text-xs font-mono text-green-400 space-y-0.5 max-h-36 overflow-y-auto">
+          {log.map((l, i) => <p key={i}>{l}</p>)}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -476,25 +691,55 @@ docker cp simulation_routes_patch.js truck_trucker_service:/app/dist/simulation.
         </div>
       </div>
 
+      {/* Q1 Data Seed + Assign Load + Auto Drive — second row */}
+      <div className="grid grid-cols-3 gap-6 mt-6">
+
+        {/* Panel 5: Seed Q1-Q4 data */}
+        <Q1SeedPanel onDone={fetchStatus} />
+
+        {/* Panel 6: Assign load to trucker */}
+        <AssignLoadPanel onDone={fetchStatus} />
+
+        {/* Panel 7: Auto Drive simulation */}
+        <AutoDrivePanel />
+      </div>
+
       {/* Quick Test Guide */}
       <div className="mt-6 bg-slate-800 rounded-xl p-6 text-white">
-        <h3 className="font-bold text-lg mb-3">🧪 Quick Demo Flow</h3>
-        <div className="grid grid-cols-4 gap-4 text-sm">
+        <h3 className="font-bold text-lg mb-3">🧪 Quick Demo Flow (Q1-Q4)</h3>
+        <div className="grid grid-cols-4 gap-4 text-sm mb-4">
           <div className="bg-slate-700 rounded-lg p-4">
-            <p className="text-orange-400 font-bold mb-1">Step 1</p>
-            <p>Click <strong>"Seed Truckers"</strong> to create 3 drivers with verified KYC</p>
+            <p className="text-orange-400 font-bold mb-1">Step 1 — Base Data</p>
+            <p>Click <strong>"Seed Truckers"</strong> then <strong>"Seed Loads"</strong> for any city</p>
           </div>
           <div className="bg-slate-700 rounded-lg p-4">
-            <p className="text-orange-400 font-bold mb-1">Step 2</p>
-            <p>Select a city and click <strong>"Seed Loads"</strong> to populate available loads</p>
+            <p className="text-orange-400 font-bold mb-1">Step 2 — Q1 Data</p>
+            <p>Click <strong>"Seed Q1-Q4 Data"</strong> — creates loader companies + highway businesses</p>
           </div>
           <div className="bg-slate-700 rounded-lg p-4">
-            <p className="text-orange-400 font-bold mb-1">Step 3</p>
-            <p>Log in on the mobile app as the city's trucker — loads appear on the Loads screen</p>
+            <p className="text-orange-400 font-bold mb-1">Step 3 — Journey Test</p>
+            <p>Click <strong>"Assign Load"</strong> for a city — trucker's Journey page activates immediately</p>
           </div>
           <div className="bg-slate-700 rounded-lg p-4">
-            <p className="text-orange-400 font-bold mb-1">Credentials</p>
-            <p className="text-gray-300 text-xs mt-1">BLR: +919860001001<br/>DEL: +919860001002<br/>MUM: +919860001003<br/>Pass: Admin@123</p>
+            <p className="text-green-400 font-bold mb-1">Step 4 — Live Drive</p>
+            <p>Click <strong>"Start Auto Drive"</strong> — truck GPS moves toward destination every few seconds</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-4 text-sm">
+          <div className="bg-slate-700 rounded-lg p-4">
+            <p className="text-teal-400 font-bold mb-1">Test Q1 (Loader Union)</p>
+            <p className="text-xs text-gray-300">Log in as loader company, browse jobs, accept booking, check-in worker</p>
+            <p className="text-gray-400 text-xs mt-1">BLR: +919870001001 / Admin@123</p>
+          </div>
+          <div className="bg-slate-700 rounded-lg p-4">
+            <p className="text-blue-400 font-bold mb-1">Test Q2-Q3 (Journey/ETA)</p>
+            <p className="text-xs text-gray-300">Log in as trucker, Journey tab shows load → Begin Loading → Start → Break suggestions appear</p>
+            <p className="text-gray-400 text-xs mt-1">BLR: +919860001001 / Admin@123</p>
+          </div>
+          <div className="bg-slate-700 rounded-lg p-4">
+            <p className="text-purple-400 font-bold mb-1">Test Q4 (Highway Ads)</p>
+            <p className="text-xs text-gray-300">Start a break → geo-targeted ads appear from seeded highway businesses</p>
+            <p className="text-gray-400 text-xs mt-1">Merchant: +919860002001 / Admin@123</p>
           </div>
         </div>
       </div>

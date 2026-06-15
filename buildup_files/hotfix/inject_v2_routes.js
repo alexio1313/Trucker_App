@@ -17,6 +17,9 @@ console.log('Written: /app/dist/journey_v2.routes.js');
 fs.writeFileSync('/app/dist/simulation.routes.js', fs.readFileSync('/tmp/simulation_routes_patch.js', 'utf8'));
 console.log('Written: /app/dist/simulation.routes.js');
 
+fs.writeFileSync('/app/dist/truckers_extra.routes.js', fs.readFileSync('/tmp/truckers_extra_routes_patch.js', 'utf8'));
+console.log('Written: /app/dist/truckers_extra.routes.js');
+
 // ─── 2. Patch auth.service.js (camelCase + strip password_hash) ──────────────
 const AUTH = '/app/dist/auth/auth.service.js';
 let authSrc = fs.readFileSync(AUTH, 'utf8');
@@ -87,9 +90,11 @@ const highwayRouter = require('./highway.routes');
 const loaderRouter = require('./loader.routes');
 const journeyV2Router = require('./journey_v2.routes');
 const simulationRouter = require('./simulation.routes');
+const truckersExtraRouter = require('./truckers_extra.routes');
 app.use('/api/v1/highway', highwayRouter);
 app.use('/api/v1/loader-cos', loaderRouter);
 app.use('/api/v1/truckers/my/journey', journeyV2Router);
+app.use('/api/v1/truckers', truckersExtraRouter);
 app.use('/api/v1/simulation', simulationRouter);
 `;
 
