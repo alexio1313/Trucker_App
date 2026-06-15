@@ -1,8 +1,20 @@
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { loadsApi, trackingApi } from '@truck-platform/api-client';
 import { LoadStatus } from '@truck-platform/shared';
 import { formatCurrency, formatRelativeTime } from '@truck-platform/shared';
+import { useAuthStore } from '@truck-platform/state';
+
+const LOADER_API = 'http://192.168.8.101:3002/api/v1/loader-cos';
+
+interface DetentionInfo {
+  active: boolean;
+  minutesElapsed: number;
+  costSoFar: number;
+  ratePerHour: number;
+  startedAt?: string;
+}
 
 const STATUS_STEPS: LoadStatus[] = ['posted', 'accepted', 'loading', 'in_transit', 'delivered'];
 
@@ -29,6 +41,9 @@ export default function LoadDetailPage() {
   const { loadId } = useParams<{ loadId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const user = useAuthStore((s) => s.user);
+  const userId = user?.userId || user?.user_id || '';
+  const [detentionInfo, setDetentionInfo] = useState<DetentionInfo | null>(null);
 
   const { data: loadData, isLoading } = useQuery({
     queryKey: ['load', loadId],
@@ -52,6 +67,36 @@ export default function LoadDetailPage() {
     enabled: loadData?.data?.status === 'in_transit',
     refetchInterval: 60000,
   });
+
+  // Detention status polling when load is in loading state
+  useEffect(() => {
+    if (!loadId || loadData?.data?.status !== 'loading') return;
+    const fetchDetention = () => {
+      fetch(`${LOADER_API}/jobs/${loadId}/detention`, {
+        headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      })
+        .then(r => r.json())
+        .then(json => { if (json.success) setDetentionInfo(json.data); })
+        .catch(() => {});
+    };
+    fetchDetention();
+    const timer = setInterval(fetchDetention, 30000);
+    return () => clearInterval(timer);
+  }, [loadId, loadData?.data?.status, userId]);
+
+  // Live detention cost tick
+  useEffect(() => {
+    if (!detentionInfo?.active || !detentionInfo.startedAt) return;
+    const tick = setInterval(() => {
+      const mins = Math.floor((Date.now() - new Date(detentionInfo.startedAt!).getTime()) / 60000);
+      setDetentionInfo(prev => prev ? {
+        ...prev,
+        minutesElapsed: mins,
+        costSoFar: parseFloat(((mins / 60) * prev.ratePerHour).toFixed(2)),
+      } : prev);
+    }, 60000);
+    return () => clearInterval(tick);
+  }, [detentionInfo?.active, detentionInfo?.startedAt]);
 
   const cancelMutation = useMutation({
     mutationFn: () => loadsApi.cancelLoad(loadId!),
@@ -144,6 +189,49 @@ export default function LoadDetailPage() {
             }`}>
               SLA: {eta.slaStatus.replace('_', ' ')}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Detention Timer — visible when status = loading */}
+      {load.status === 'loading' && (
+        <div className={`border rounded-xl p-5 mb-6 ${detentionInfo?.active ? 'bg-red-50 border-red-200' : 'bg-indigo-50 border-indigo-200'}`}>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className={`font-semibold ${detentionInfo?.active ? 'text-red-800' : 'text-indigo-800'}`}>
+              ⏱️ Loading & Detention
+            </h3>
+            {detentionInfo && (
+              <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                detentionInfo.active ? 'bg-red-100 text-red-700' : 'bg-indigo-100 text-indigo-700'
+              }`}>
+                {detentionInfo.active ? '🔴 DETENTION RUNNING' : '🟢 IN FREE WINDOW'}
+              </span>
+            )}
+          </div>
+          {detentionInfo ? (
+            detentionInfo.active ? (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-white rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-red-600">{detentionInfo.minutesElapsed}</p>
+                  <p className="text-xs text-gray-500">minutes elapsed</p>
+                </div>
+                <div className="bg-white rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-red-600">₹{detentionInfo.costSoFar.toFixed(0)}</p>
+                  <p className="text-xs text-gray-500">detention cost</p>
+                </div>
+                <div className="bg-white rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-gray-700">₹{detentionInfo.ratePerHour}</p>
+                  <p className="text-xs text-gray-500">per hour rate</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-indigo-700">
+                Trucker has arrived. 2-hour free loading window is active.
+                Detention of ₹{detentionInfo.ratePerHour}/hr starts if loading takes longer.
+              </p>
+            )
+          ) : (
+            <p className="text-sm text-indigo-600">Waiting for trucker arrival confirmation to start loading window.</p>
           )}
         </div>
       )}

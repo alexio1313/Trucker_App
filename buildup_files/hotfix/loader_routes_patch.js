@@ -135,6 +135,127 @@ router.post('/jobs/:loadId/express-interest', async (req, res) => {
   }
 });
 
+// GET /api/v1/loader-cos/my-bookings
+router.get('/my-bookings', async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const company = await queryOne('SELECT id FROM loader_companies WHERE owner_id=$1', [userId]);
+    if (!company) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Company not found' } });
+    const bookings = await query(
+      `SELECT lj.id AS job_id, lj.load_id, lj.arrangement_type, lj.trucker_arrival_time,
+              lj.detention_started_at, lj.detention_rate_per_hour, lj.loading_completed_at,
+              lj.detention_minutes, lj.detention_cost, lj.payment_status, lj.created_at,
+              l.origin_city, l.origin_address, l.dest_city, l.cargo_type, l.cargo_weight_kg,
+              l.pickup_start AS scheduled_start, u.full_name AS merchant_name
+       FROM loading_jobs lj
+       JOIN loads l ON lj.load_id = l.load_id
+       JOIN users u ON l.merchant_id = u.user_id
+       WHERE lj.loader_company_id = $1
+       ORDER BY lj.created_at DESC LIMIT 50`,
+      [company.id]
+    );
+    res.json({
+      success: true,
+      data: bookings.map(b => ({
+        jobId: b.job_id, loadId: b.load_id,
+        originCity: b.origin_city, originAddress: b.origin_address, destCity: b.dest_city,
+        cargoType: b.cargo_type, weightTonnes: ((b.cargo_weight_kg || 0) / 1000).toFixed(2),
+        merchantName: b.merchant_name, arrangementType: b.arrangement_type,
+        truckerArrivalTime: b.trucker_arrival_time, detentionStartedAt: b.detention_started_at,
+        detentionRatePerHour: parseFloat(b.detention_rate_per_hour || 75),
+        loadingCompletedAt: b.loading_completed_at,
+        detentionMinutes: b.detention_minutes || 0,
+        detentionCost: parseFloat(b.detention_cost || 0),
+        paymentStatus: b.payment_status, scheduledStart: b.scheduled_start,
+      }))
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+  }
+});
+
+// POST /api/v1/loader-cos/jobs/:loadId/accept
+router.post('/jobs/:loadId/accept', async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { loadId } = req.params;
+    const company = await queryOne('SELECT id FROM loader_companies WHERE owner_id=$1', [userId]);
+    if (!company) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Company not found' } });
+    const existing = await queryOne('SELECT id FROM loading_jobs WHERE load_id=$1 AND loader_company_id=$2', [loadId, company.id]);
+    if (existing) {
+      await query("UPDATE loading_jobs SET arrangement_type='company_arranged', updated_at=NOW() WHERE id=$1", [existing.id]);
+    } else {
+      await query("INSERT INTO loading_jobs (load_id, arrangement_type, loader_company_id) VALUES ($1,'company_arranged',$2)", [loadId, company.id]);
+    }
+    res.json({ success: true, data: { message: 'Booking accepted. Merchant has been notified.' } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+  }
+});
+
+// POST /api/v1/loader-cos/jobs/:loadId/worker-checkin
+router.post('/jobs/:loadId/worker-checkin', async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { loadId } = req.params;
+    const { workerId } = req.body;
+    const company = await queryOne('SELECT id FROM loader_companies WHERE owner_id=$1', [userId]);
+    if (!company) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Company not found' } });
+    const worker = await queryOne('SELECT id, name FROM loader_workers WHERE id=$1 AND company_id=$2', [workerId, company.id]);
+    if (!worker) return res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Worker not found' } });
+    await query("UPDATE loader_workers SET status='busy', updated_at=NOW() WHERE id=$1", [workerId]);
+    res.json({ success: true, data: { message: `${worker.name} checked in at ${new Date().toLocaleTimeString('en-IN')}`, checkedInAt: new Date().toISOString() } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+  }
+});
+
+// GET /api/v1/loader-cos/jobs/:loadId/detention
+router.get('/jobs/:loadId/detention', async (req, res) => {
+  try {
+    const { loadId } = req.params;
+    const job = await queryOne('SELECT * FROM loading_jobs WHERE load_id=$1 ORDER BY created_at DESC LIMIT 1', [loadId]);
+    if (!job) return res.json({ success: true, data: { active: false, minutesElapsed: 0, costSoFar: 0, ratePerHour: 75 } });
+    const now = Date.now();
+    const started = job.detention_started_at ? new Date(job.detention_started_at).getTime() : null;
+    const minutesElapsed = started && !job.loading_completed_at ? Math.max(0, Math.floor((now - started) / 60000)) : (job.detention_minutes || 0);
+    const costSoFar = (minutesElapsed / 60) * parseFloat(job.detention_rate_per_hour || 75);
+    res.json({
+      success: true,
+      data: {
+        active: !!started && !job.loading_completed_at,
+        minutesElapsed, costSoFar: parseFloat(costSoFar.toFixed(2)),
+        ratePerHour: parseFloat(job.detention_rate_per_hour || 75),
+        startedAt: job.detention_started_at,
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+  }
+});
+
+// PATCH /api/v1/loader-cos/loads/:loadId/setup — merchant sets loading arrangement
+router.patch('/loads/:loadId/setup', async (req, res) => {
+  try {
+    const userId = getUserId(req);
+    const { loadId } = req.params;
+    const { arrangementType, detentionRate, loaderCompanyId } = req.body;
+    await query(
+      `UPDATE loads SET loading_arrangement=COALESCE($1,loading_arrangement), detention_rate_per_hour=COALESCE($2,detention_rate_per_hour), updated_at=NOW() WHERE load_id=$3`,
+      [arrangementType, detentionRate, loadId]
+    );
+    if (loaderCompanyId) {
+      await query(
+        "INSERT INTO loading_jobs (load_id, arrangement_type, loader_company_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING",
+        [loadId, arrangementType || 'company_arranged', loaderCompanyId]
+      );
+    }
+    res.json({ success: true, data: { message: 'Loading arrangement saved.' } });
+  } catch (e) {
+    res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: e.message } });
+  }
+});
+
 // GET /api/v1/loader-cos/analytics
 router.get('/analytics', async (req, res) => {
   try {

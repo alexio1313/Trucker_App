@@ -3,7 +3,8 @@ import { useI18n } from '../../i18n/useI18n';
 import { useAuthStore } from '@truck-platform/state';
 
 const TRUCKER_API = 'http://192.168.8.101:3002/api/v1/truckers';
-const LOAD_API    = 'http://192.168.8.101:3001/api/v1/loads';
+const HIGHWAY_API = 'http://192.168.8.101:3002/api/v1/highway';
+const LOADER_API  = 'http://192.168.8.101:3002/api/v1/loader-cos';
 const OSRM        = 'https://router.project-osrm.org/route/v1/driving';
 const OVERPASS    = 'https://overpass-api.de/api/interpreter';
 
@@ -12,26 +13,26 @@ function getAuthHeaders(userId?: string | null): HeadersInit {
   return { 'Content-Type': 'application/json', 'x-user-id': uid };
 }
 
-// India NH toll estimate (NHAI 2025 rates)
-// Class 4 (2-axle truck) ≈ ₹175/booth, booth every ~65 km
-// Class 7 (multi-axle)   ≈ ₹295/booth
 function estimateToll(distKm: number, isHeavy = true): number {
   const booths = Math.round(distKm / 65);
   const perBooth = isHeavy ? 295 : 175;
   return Math.max(0, booths) * perBooth;
 }
 
-// 4 km/L average for NH heavy truck, ₹93/L diesel (2025)
 function estimateFuel(distKm: number): { liters: number; cost: number } {
   const liters = Math.ceil(distKm / 4);
   return { liters, cost: Math.round(liters * 93) };
 }
 
 function estimateHours(distKm: number): string {
-  const hours = distKm / 55; // ~55 km/h average incl. rest
+  const hours = distKm / 55;
   const h = Math.floor(hours);
   const m = Math.round((hours - h) * 60);
   return `${h}h ${m}m`;
+}
+
+function elapsedMins(isoStr: string): number {
+  return Math.floor((Date.now() - new Date(isoStr).getTime()) / 60000);
 }
 
 interface ActiveLoad {
@@ -77,12 +78,61 @@ interface FuelStop {
   logged_at: string;
 }
 
+interface ETABreakdown {
+  newETA: string;
+  remainingKm: number;
+  delayVsOriginal?: number;
+  breakdown: {
+    drivingMins: number;
+    pendingBreaksMins: number;
+    trafficDelayMins: number;
+    fatigueMins: number;
+  };
+}
+
+interface BreakSuggestion {
+  type: string;
+  reason: string;
+  priority: string;
+  hoursFromStart?: number;
+}
+
+interface ActiveBreakState {
+  id: string;
+  type: string;
+  startedAt: string;
+}
+
+interface HighwayAd {
+  adId: string;
+  businessName: string;
+  offerText: string;
+  distanceKm: number;
+  phone: string;
+  adType: string;
+}
+
+interface DetentionInfo {
+  active: boolean;
+  minutesElapsed: number;
+  costSoFar: number;
+  ratePerHour: number;
+  startedAt?: string;
+}
+
 const STEP_STATES: Record<string, number> = {
   accepted: 0,
   loading: 1,
   in_transit: 2,
   delivered: 3,
 };
+
+const BREAK_TYPES = [
+  { value: 'meal', label: '🍽️ Meal Break', desc: 'Food & rest stop' },
+  { value: 'rest', label: '😴 Rest Break', desc: 'Driver rest / nap' },
+  { value: 'fuel', label: '⛽ Fuel Stop', desc: 'Refuelling + break' },
+  { value: 'maintenance', label: '🔧 Maintenance', desc: 'Vehicle check / repair' },
+];
 
 export default function JourneyPage() {
   const { t } = useI18n();
@@ -110,6 +160,20 @@ export default function JourneyPage() {
   const [actualToll, setActualToll] = useState('');
   const [nearbyFuel, setNearbyFuel] = useState<{ lat: number; lng: number; name: string }[]>([]);
   const [osrmRoute, setOsrmRoute] = useState<{ distKm: number; durationSec: number } | null>(null);
+
+  // V2 state — ETA, breaks, ads, toll, detention
+  const [etaBreakdown, setEtaBreakdown] = useState<ETABreakdown | null>(null);
+  const [breakSuggestions, setBreakSuggestions] = useState<BreakSuggestion[]>([]);
+  const [activeBreak, setActiveBreak] = useState<ActiveBreakState | null>(null);
+  const [breakAds, setBreakAds] = useState<HighwayAd[]>([]);
+  const [showBreakModal, setShowBreakModal] = useState(false);
+  const [breakType, setBreakType] = useState<'meal' | 'rest' | 'fuel' | 'maintenance'>('meal');
+  const [showTollModal, setShowTollModal] = useState(false);
+  const [tollPlaza, setTollPlaza] = useState('');
+  const [tollAmount, setTollAmount] = useState('');
+  const [tollPaymentMethod, setTollPaymentMethod] = useState<'fastag' | 'cash'>('fastag');
+  const [detentionInfo, setDetentionInfo] = useState<DetentionInfo | null>(null);
+  const [breakElapsedMins, setBreakElapsedMins] = useState(0);
 
   const showToast = (msg: string, ok = true) => {
     setToast({ msg, ok });
@@ -171,7 +235,6 @@ export default function JourneyPage() {
     const L = (window as any).L;
     if (!L || !map) return;
 
-    // Pickup marker
     const pickupIcon = L.divIcon({
       className: '',
       html: `<div style="background:#22c55e;color:white;padding:6px 10px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.3)">📍 ${t('pickupHere')}</div>`,
@@ -179,7 +242,6 @@ export default function JourneyPage() {
     });
     L.marker([load.origin_lat, load.origin_lng], { icon: pickupIcon }).addTo(map);
 
-    // Destination marker
     const destIcon = L.divIcon({
       className: '',
       html: `<div style="background:#ef4444;color:white;padding:6px 10px;border-radius:20px;font-size:12px;font-weight:700;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.3)">🏁 ${t('dropHere')}</div>`,
@@ -187,7 +249,6 @@ export default function JourneyPage() {
     });
     L.marker([load.dest_lat, load.dest_lng], { icon: destIcon }).addTo(map);
 
-    // Draw OSRM route
     try {
       const url = `${OSRM}/${load.origin_lng},${load.origin_lat};${load.dest_lng},${load.dest_lat}?overview=full&geometries=geojson`;
       const res = await fetch(url);
@@ -200,7 +261,6 @@ export default function JourneyPage() {
         map.fitBounds(routeLayer.current.getBounds().pad(0.1));
         setOsrmRoute({ distKm: route.distance / 1000, durationSec: route.duration });
 
-        // Fuel stations near midpoint of route
         const midIdx = Math.floor(coords.length / 2);
         const [midLat, midLng] = coords[midIdx];
         fetchFuelStations(midLat, midLng);
@@ -219,7 +279,6 @@ export default function JourneyPage() {
       }));
       setNearbyFuel(stations);
 
-      // Add to map
       const L = (window as any).L;
       const map = mapInstance.current;
       if (L && map) {
@@ -234,6 +293,95 @@ export default function JourneyPage() {
       }
     } catch { /* ignore */ }
   };
+
+  // ── V2: ETA & Break fetchers ───────────────────────────────────────────────
+
+  const fetchV2ETA = useCallback(async () => {
+    if (!load) return;
+    try {
+      const res = await fetch(
+        `${TRUCKER_API}/my/journey/eta?loadId=${load.load_id}`,
+        { headers: getAuthHeaders(userId) }
+      );
+      const json = await res.json();
+      if (json.success && json.data) setEtaBreakdown(json.data);
+    } catch { /* ignore */ }
+  }, [load, userId]);
+
+  const fetchBreakSuggestions = useCallback(async () => {
+    if (!load || !journey?.log_id) return;
+    try {
+      const res = await fetch(
+        `${TRUCKER_API}/my/journey/break-suggestions?journeyLogId=${journey.log_id}`,
+        { headers: getAuthHeaders(userId) }
+      );
+      const json = await res.json();
+      if (json.success) setBreakSuggestions(json.data?.suggestions || []);
+    } catch { /* ignore */ }
+  }, [load, journey, userId]);
+
+  const fetchDetentionStatus = useCallback(async () => {
+    if (!load) return;
+    try {
+      const res = await fetch(
+        `${LOADER_API}/jobs/${load.load_id}/detention`,
+        { headers: getAuthHeaders(userId) }
+      );
+      const json = await res.json();
+      if (json.success) setDetentionInfo(json.data);
+    } catch { /* ignore */ }
+  }, [load, userId]);
+
+  const fetchBreakAds = useCallback(async (bType: string, lat?: number, lng?: number) => {
+    const driverLat = lat || load?.origin_lat;
+    const driverLng = lng || load?.origin_lng;
+    if (!driverLat || !driverLng) return;
+    try {
+      const res = await fetch(`${HIGHWAY_API}/ads/serve`, {
+        method: 'POST',
+        headers: getAuthHeaders(userId),
+        body: JSON.stringify({ driverLat, driverLng, breakType: bType }),
+      });
+      const json = await res.json();
+      if (json.success) setBreakAds(json.data?.ads || []);
+    } catch { /* ignore */ }
+  }, [load, userId]);
+
+  // V2 polling
+  useEffect(() => {
+    const statusNow = load?.status;
+    if (statusNow === 'in_transit') {
+      fetchV2ETA();
+      fetchBreakSuggestions();
+      const timer = setInterval(() => { fetchV2ETA(); fetchBreakSuggestions(); }, 120000);
+      return () => clearInterval(timer);
+    }
+    if (statusNow === 'loading') {
+      fetchDetentionStatus();
+      const timer = setInterval(fetchDetentionStatus, 30000);
+      return () => clearInterval(timer);
+    }
+  }, [load?.status, fetchV2ETA, fetchBreakSuggestions, fetchDetentionStatus]);
+
+  // Break elapsed timer
+  useEffect(() => {
+    if (!activeBreak) { setBreakElapsedMins(0); return; }
+    setBreakElapsedMins(elapsedMins(activeBreak.startedAt));
+    const t = setInterval(() => setBreakElapsedMins(elapsedMins(activeBreak.startedAt)), 60000);
+    return () => clearInterval(t);
+  }, [activeBreak]);
+
+  // Detention timer update
+  useEffect(() => {
+    if (!detentionInfo?.active || !detentionInfo.startedAt) return;
+    const t = setInterval(() => {
+      const mins = Math.floor((Date.now() - new Date(detentionInfo.startedAt!).getTime()) / 60000);
+      setDetentionInfo(prev => prev ? { ...prev, minutesElapsed: mins, costSoFar: parseFloat(((mins / 60) * prev.ratePerHour).toFixed(2)) } : prev);
+    }, 60000);
+    return () => clearInterval(t);
+  }, [detentionInfo?.active, detentionInfo?.startedAt]);
+
+  // ── Action Handlers ────────────────────────────────────────────────────────
 
   const handleBeginLoading = async () => {
     if (!load) return;
@@ -312,6 +460,91 @@ export default function JourneyPage() {
     } catch { showToast(t('error'), false); }
     finally { setActionLoading(false); }
   };
+
+  const handleBreakStart = async () => {
+    if (!load || !journey?.log_id) return;
+    setActionLoading(true);
+    try {
+      let lat = load.origin_lat, lng = load.origin_lng;
+      if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        await new Promise<void>((resolve) => {
+          navigator.geolocation.getCurrentPosition(
+            (pos) => { lat = pos.coords.latitude; lng = pos.coords.longitude; resolve(); },
+            () => resolve(), { timeout: 4000 }
+          );
+        });
+      }
+      const res = await fetch(`${TRUCKER_API}/my/journey/break-start`, {
+        method: 'POST',
+        headers: getAuthHeaders(userId),
+        body: JSON.stringify({ journeyLogId: journey.log_id, breakType, locationName: `${breakType} break` }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        const bid = json.data?.break_id || json.data?.breakId || json.data?.id;
+        setActiveBreak({ id: bid, type: breakType, startedAt: new Date().toISOString() });
+        setShowBreakModal(false);
+        showToast(`Break started — ${breakType}`);
+        fetchBreakAds(breakType, lat, lng);
+      } else showToast(json.error?.message || t('error'), false);
+    } catch { showToast(t('error'), false); }
+    finally { setActionLoading(false); }
+  };
+
+  const handleBreakEnd = async () => {
+    if (!activeBreak) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch(`${TRUCKER_API}/my/journey/break-end`, {
+        method: 'POST',
+        headers: getAuthHeaders(userId),
+        body: JSON.stringify({ breakId: activeBreak.id }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setActiveBreak(null);
+        setBreakAds([]);
+        setBreakSuggestions([]);
+        showToast('Break ended — drive safely!');
+        fetchV2ETA();
+        fetchBreakSuggestions();
+      } else showToast(json.error?.message || t('error'), false);
+    } catch { showToast(t('error'), false); }
+    finally { setActionLoading(false); }
+  };
+
+  const handleTollLog = async () => {
+    if (!load || !tollAmount) return;
+    setActionLoading(true);
+    try {
+      const res = await fetch(`${TRUCKER_API}/my/journey/toll`, {
+        method: 'POST',
+        headers: getAuthHeaders(userId),
+        body: JSON.stringify({
+          loadId: load.load_id,
+          plazaName: tollPlaza || 'Toll Plaza',
+          amount: parseFloat(tollAmount),
+          paymentMethod: tollPaymentMethod,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        showToast(`Toll ₹${tollAmount} logged`);
+        setShowTollModal(false);
+        setTollPlaza(''); setTollAmount('');
+        fetchData();
+      } else showToast(json.error?.message || t('error'), false);
+    } catch { showToast(t('error'), false); }
+    finally { setActionLoading(false); }
+  };
+
+  const handleAdClick = async (adId: string) => {
+    try {
+      await fetch(`${HIGHWAY_API}/ads/${adId}/click`, { method: 'POST', headers: getAuthHeaders(userId) });
+    } catch { /* ignore */ }
+  };
+
+  // ── Derived state ──────────────────────────────────────────────────────────
 
   const dist = osrmRoute?.distKm || parseFloat(String(load?.distance_km || 0));
   const toll = estimateToll(dist);
@@ -484,17 +717,179 @@ export default function JourneyPage() {
           </div>
         )}
 
+        {/* ── V2: Detention Timer (when loading) ── */}
+        {isLoading && detentionInfo && (
+          <div className={`rounded-2xl p-4 border ${detentionInfo.active ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-gray-200'}`}>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-bold text-gray-800">⏱️ Detention Timer</p>
+              <span className={`text-xs px-2 py-1 rounded-full font-semibold ${detentionInfo.active ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-600'}`}>
+                {detentionInfo.active ? 'RUNNING' : 'NOT STARTED'}
+              </span>
+            </div>
+            {detentionInfo.active ? (
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-white rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-red-600">{detentionInfo.minutesElapsed}</p>
+                  <p className="text-xs text-gray-500">minutes</p>
+                </div>
+                <div className="bg-white rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-red-600">₹{detentionInfo.costSoFar.toFixed(0)}</p>
+                  <p className="text-xs text-gray-500">cost so far</p>
+                </div>
+                <div className="bg-white rounded-xl p-3 text-center">
+                  <p className="text-2xl font-bold text-gray-600">₹{detentionInfo.ratePerHour}</p>
+                  <p className="text-xs text-gray-500">per hour</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">Detention starts after 2-hour free grace period from truck arrival.</p>
+            )}
+          </div>
+        )}
+
+        {/* ── V2: ETA Breakdown (when in_transit) ── */}
+        {isInTransit && etaBreakdown && (
+          <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-bold text-blue-900">📡 Live ETA Breakdown</p>
+              <span className="text-xs text-blue-500">{etaBreakdown.remainingKm?.toFixed(0)} km left</span>
+            </div>
+            <div className="bg-white rounded-xl px-4 py-3 mb-3">
+              <p className="text-xs text-gray-500 mb-1">Estimated Arrival</p>
+              <p className="text-lg font-bold text-blue-800">
+                {new Date(etaBreakdown.newETA).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                <span className="text-xs font-normal text-gray-500 ml-2">
+                  {new Date(etaBreakdown.newETA).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                </span>
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-white rounded-xl p-3">
+                <p className="text-xs text-gray-500">🚛 Driving</p>
+                <p className="text-base font-bold text-gray-800">{etaBreakdown.breakdown.drivingMins} min</p>
+              </div>
+              <div className="bg-white rounded-xl p-3">
+                <p className="text-xs text-gray-500">☕ Pending breaks</p>
+                <p className="text-base font-bold text-purple-700">{etaBreakdown.breakdown.pendingBreaksMins} min</p>
+              </div>
+              <div className="bg-white rounded-xl p-3">
+                <p className="text-xs text-gray-500">🚦 Traffic delay</p>
+                <p className="text-base font-bold text-orange-600">{etaBreakdown.breakdown.trafficDelayMins} min</p>
+              </div>
+              <div className="bg-white rounded-xl p-3">
+                <p className="text-xs text-gray-500">😴 Fatigue buffer</p>
+                <p className="text-base font-bold text-gray-600">{etaBreakdown.breakdown.fatigueMins} min</p>
+              </div>
+            </div>
+            {etaBreakdown.delayVsOriginal != null && etaBreakdown.delayVsOriginal > 0 && (
+              <p className="text-xs text-orange-600 mt-2">⚠️ {Math.round(etaBreakdown.delayVsOriginal / 60)} hr behind schedule</p>
+            )}
+          </div>
+        )}
+
+        {/* ── V2: Active Break Panel ── */}
+        {activeBreak && (
+          <div className="bg-purple-50 border-2 border-purple-200 rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <p className="text-sm font-bold text-purple-900">
+                  {BREAK_TYPES.find(b => b.value === activeBreak.type)?.label || '☕ Break in Progress'}
+                </p>
+                <p className="text-xs text-purple-600">{breakElapsedMins} min elapsed</p>
+              </div>
+              <button
+                onClick={handleBreakEnd}
+                disabled={actionLoading}
+                className="bg-purple-600 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-purple-700 disabled:opacity-50"
+              >
+                {actionLoading ? '⏳' : '▶ End Break'}
+              </button>
+            </div>
+
+            {/* Highway business ads during break */}
+            {breakAds.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-purple-700 mb-2">📍 Nearby businesses</p>
+                <div className="space-y-2">
+                  {breakAds.map((ad) => (
+                    <div
+                      key={ad.adId}
+                      className="bg-white rounded-xl p-3 flex items-center justify-between"
+                      onClick={() => handleAdClick(ad.adId)}
+                    >
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-gray-900">{ad.businessName}</p>
+                        <p className="text-xs text-orange-600">{ad.offerText}</p>
+                        <p className="text-xs text-gray-400">{ad.adType} · {ad.distanceKm?.toFixed(1)} km away</p>
+                      </div>
+                      {ad.phone && (
+                        <a
+                          href={`tel:${ad.phone}`}
+                          className="ml-3 bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-xs font-bold"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          📞 Call
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {breakAds.length === 0 && (
+              <p className="text-xs text-purple-400 text-center py-2">No nearby businesses found along your route.</p>
+            )}
+          </div>
+        )}
+
+        {/* ── V2: Break Suggestions (when in_transit & no active break) ── */}
+        {isInTransit && !activeBreak && breakSuggestions.length > 0 && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+            <p className="text-sm font-bold text-amber-900 mb-3">💡 Break Suggestions</p>
+            <div className="space-y-2">
+              {breakSuggestions.map((s, i) => (
+                <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border ${
+                  s.priority === 'mandatory' ? 'bg-red-50 border-red-200' : 'bg-white border-amber-100'
+                }`}>
+                  <span className="text-lg">{s.type === 'meal' ? '🍽️' : s.type === 'rest' ? '😴' : '☕'}</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-gray-800 capitalize">{s.type} break</p>
+                    <p className="text-xs text-gray-600">{s.reason}</p>
+                  </div>
+                  {s.priority === 'mandatory' && (
+                    <span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded-full font-semibold">REQUIRED</span>
+                  )}
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowBreakModal(true)}
+              className="mt-3 w-full bg-amber-500 text-white py-3 rounded-xl text-sm font-bold hover:bg-amber-600"
+            >
+              ☕ Take a Break Now
+            </button>
+          </div>
+        )}
+
         {/* Fuel Stops */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-bold text-gray-700">⛽ {t('fuelStops')} ({fuelStops.length})</p>
             {!isDelivered && (
-              <button
-                onClick={() => setShowFuelModal(true)}
-                className="text-xs bg-yellow-100 text-yellow-700 px-3 py-1.5 rounded-full font-semibold hover:bg-yellow-200 transition-colors"
-              >
-                + {t('logFuelStop')}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowTollModal(true)}
+                  className="text-xs bg-orange-100 text-orange-700 px-3 py-1.5 rounded-full font-semibold hover:bg-orange-200 transition-colors"
+                >
+                  🚧 Log Toll
+                </button>
+                <button
+                  onClick={() => setShowFuelModal(true)}
+                  className="text-xs bg-yellow-100 text-yellow-700 px-3 py-1.5 rounded-full font-semibold hover:bg-yellow-200 transition-colors"
+                >
+                  + {t('logFuelStop')}
+                </button>
+              </div>
             )}
           </div>
           {fuelStops.length === 0 ? (
@@ -536,12 +931,29 @@ export default function JourneyPage() {
                 🚀 {t('startJourney')}
               </button>
             )}
-            {isInTransit && (
+            {isInTransit && !activeBreak && (
+              <>
+                <button
+                  onClick={() => setShowBreakModal(true)}
+                  className="w-full bg-purple-500 text-white py-4 rounded-2xl text-lg font-bold shadow-sm hover:bg-purple-600 active:scale-95 transition-all"
+                >
+                  ☕ Take a Break
+                </button>
+                <button
+                  onClick={() => setShowDeliverModal(true)}
+                  className="w-full bg-green-500 text-white py-5 rounded-2xl text-xl font-bold shadow-lg hover:bg-green-600 active:scale-95 transition-all"
+                >
+                  ✅ {t('markDelivered')}
+                </button>
+              </>
+            )}
+            {isInTransit && activeBreak && (
               <button
-                onClick={() => setShowDeliverModal(true)}
-                className="w-full bg-green-500 text-white py-5 rounded-2xl text-xl font-bold shadow-lg hover:bg-green-600 active:scale-95 transition-all"
+                onClick={handleBreakEnd}
+                disabled={actionLoading}
+                className="w-full bg-gray-700 text-white py-5 rounded-2xl text-xl font-bold shadow-lg hover:bg-gray-800 active:scale-95 transition-all disabled:opacity-50"
               >
-                ✅ {t('markDelivered')}
+                {actionLoading ? '⏳' : '▶ End Break — Resume Journey'}
               </button>
             )}
           </div>
@@ -688,6 +1100,86 @@ export default function JourneyPage() {
               className="w-full bg-green-500 text-white py-4 rounded-xl text-lg font-bold disabled:opacity-50 hover:bg-green-600 transition-colors"
             >
               {actionLoading ? '⏳' : `✅ ${t('markDelivered')}`}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── V2: Break Modal ── */}
+      {showBreakModal && (
+        <Modal title="☕ Start a Break" onClose={() => setShowBreakModal(false)}>
+          <p className="text-sm text-gray-500 mb-4">Select break type. Nearby highway businesses will be shown.</p>
+          <div className="grid grid-cols-2 gap-3 mb-5">
+            {BREAK_TYPES.map((b) => (
+              <button
+                key={b.value}
+                onClick={() => setBreakType(b.value as any)}
+                className={`p-3 rounded-xl border-2 text-left transition-colors ${
+                  breakType === b.value ? 'border-purple-500 bg-purple-50' : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <p className="text-sm font-semibold text-gray-800">{b.label}</p>
+                <p className="text-xs text-gray-500">{b.desc}</p>
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={handleBreakStart}
+            disabled={actionLoading}
+            className="w-full bg-purple-500 text-white py-4 rounded-xl text-lg font-bold disabled:opacity-50 hover:bg-purple-600 transition-colors"
+          >
+            {actionLoading ? '⏳' : '☕ Start Break'}
+          </button>
+        </Modal>
+      )}
+
+      {/* ── V2: Toll Modal ── */}
+      {showTollModal && (
+        <Modal title="🚧 Log Toll Crossing" onClose={() => setShowTollModal(false)}>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Toll Plaza Name</label>
+              <input
+                type="text"
+                value={tollPlaza}
+                onChange={e => setTollPlaza(e.target.value)}
+                placeholder="e.g. Surat Toll Plaza, NH-48"
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Amount Paid (₹) *</label>
+              <input
+                type="number"
+                value={tollAmount}
+                onChange={e => setTollAmount(e.target.value)}
+                placeholder="e.g. 295"
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-semibold text-gray-700 mb-2">Payment Method</label>
+              <div className="flex gap-3">
+                {(['fastag', 'cash'] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setTollPaymentMethod(m)}
+                    className={`flex-1 py-2.5 rounded-xl border-2 text-sm font-semibold transition-colors ${
+                      tollPaymentMethod === m ? 'border-orange-500 bg-orange-50 text-orange-700' : 'border-gray-200 text-gray-600'
+                    }`}
+                  >
+                    {m === 'fastag' ? '📡 FASTag' : '💵 Cash'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button
+              onClick={handleTollLog}
+              disabled={actionLoading || !tollAmount}
+              className="w-full bg-orange-500 text-white py-4 rounded-xl text-lg font-bold disabled:opacity-50 hover:bg-orange-600 transition-colors"
+            >
+              {actionLoading ? '⏳' : '💾 Save Toll'}
             </button>
           </div>
         </Modal>
